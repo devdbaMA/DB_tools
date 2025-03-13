@@ -776,16 +776,16 @@ VACUUM ANALYZE;">VACUUM ANALYZE...</button>
                 Chart.defaults.plugins.tooltip.titleFont.size = 13;
                 Chart.defaults.plugins.legend.position = 'right';
 
-                const now = new Date();
-                const options = { 
-                    year: 'numeric', 
-                    month: 'long', 
-                    day: 'numeric',
-                    hour: 'numeric',
-                    minute: 'numeric',
-                    second: 'numeric',
-                    timeZoneName: 'short'
-                };
+        const now = new Date();
+        const options = { 
+            year: 'numeric', 
+            month: 'long', 
+            day: 'numeric',
+            hour: 'numeric',
+            minute: 'numeric',
+            second: 'numeric',
+            timeZoneName: 'short'
+        };
                 
                 const selectedTime = document.getElementById('selected-time');
                 if (selectedTime) {
@@ -794,8 +794,8 @@ VACUUM ANALYZE;">VACUUM ANALYZE...</button>
 
                 // Generate time labels
                 const timeLabels = [];
-                for (let i = 30; i >= 0; i--) {
-                    const time = new Date(now.getTime() - i * 60000);
+        for (let i = 30; i >= 0; i--) {
+            const time = new Date(now.getTime() - i * 60000);
                     timeLabels.push(time.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}));
                 }
 
@@ -822,34 +822,34 @@ VACUUM ANALYZE;">VACUUM ANALYZE...</button>
                     }));
 
                     new Chart(activityChartCtx, {
-                        type: 'line',
-                        data: {
+                type: 'line',
+                data: {
                             labels: timeLabels,
                             datasets: datasets
-                        },
-                        options: {
-                            responsive: true,
-                            maintainAspectRatio: false,
-                            interaction: {
-                                mode: 'nearest',
-                                axis: 'x',
-                                intersect: false
-                            },
-                            plugins: {
-                                legend: {
-                                    position: 'right',
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: {
+                        mode: 'nearest',
+                        axis: 'x',
+                        intersect: false
+                    },
+                    plugins: {
+                        legend: {
+                            position: 'right',
                                     align: 'start',
-                                    labels: {
+                            labels: {
                                         boxWidth: 12,
                                         padding: 15,
-                                        font: {
+                                font: {
                                             size: 11
                                         },
                                         usePointStyle: true,
                                         pointStyle: 'circle'
-                                    }
-                                },
-                                tooltip: {
+                            }
+                        },
+                        tooltip: {
                                     mode: 'index',
                                     intersect: false,
                                     backgroundColor: 'rgba(33, 33, 33, 0.95)',
@@ -859,33 +859,33 @@ VACUUM ANALYZE;">VACUUM ANALYZE...</button>
                                     borderWidth: 1,
                                     padding: 10,
                                     cornerRadius: 4,
-                                    callbacks: {
-                                        label: function(context) {
+                            callbacks: {
+                                label: function(context) {
                                             return context.dataset.label + ': ' + context.parsed.y.toFixed(1) + '%';
                                         }
                                     }
                                 }
                             },
-                            scales: {
+                    scales: {
                                 x: {
                                     grid: {
-                                        display: true,
+                                display: true,
                                         color: 'rgba(0, 0, 0, 0.05)',
                                         drawBorder: false
                                     },
                                     ticks: {
-                                        font: {
+                            font: {
                                             size: 10
                                         },
                                         color: 'rgba(0, 0, 0, 0.6)'
-                                    }
-                                },
-                                y: {
+                            }
+                        },
+                        y: {
                                     stacked: true,
-                                    beginAtZero: true,
-                                    max: 100,
+                            beginAtZero: true,
+                            max: 100,
                                     grid: {
-                                        display: true,
+                                display: true,
                                         color: 'rgba(0, 0, 0, 0.05)',
                                         drawBorder: false
                                     },
@@ -903,10 +903,10 @@ VACUUM ANALYZE;">VACUUM ANALYZE...</button>
                             animation: {
                                 duration: 750,
                                 easing: 'easeOutQuart'
-                            }
-                        }
-                    });
+                    }
                 }
+            });
+        }
 
                 // Set up refresh functionality
                 const manualRefresh = document.getElementById('manual-refresh');
@@ -969,32 +969,32 @@ VACUUM ANALYZE;">VACUUM ANALYZE...</button>
         }
         
         return data;
-    }
-
-    // SQL Modal functionality
-    const sqlModal = document.getElementById('sqlModal');
-    if (sqlModal) {
-        sqlModal.addEventListener('show.bs.modal', function (event) {
-            const button = event.relatedTarget;
-            const sqlId = button.getAttribute('data-sql-id');
+        }
+        
+        // SQL Modal functionality
+        const sqlModal = document.getElementById('sqlModal');
+        if (sqlModal) {
+            sqlModal.addEventListener('show.bs.modal', function (event) {
+                    const button = event.relatedTarget;
+                    const sqlId = button.getAttribute('data-sql-id');
             const sqlText = button.getAttribute('data-sql-text');
             
-            const modalSqlId = sqlModal.querySelector('#modal-sql-id');
-            const modalSqlText = sqlModal.querySelector('#modal-sql-text');
-            
-            if (modalSqlId) modalSqlId.textContent = sqlId;
+                    const modalSqlId = sqlModal.querySelector('#modal-sql-id');
+                    const modalSqlText = sqlModal.querySelector('#modal-sql-text');
+                    
+                    if (modalSqlId) modalSqlId.textContent = sqlId;
             if (modalSqlText) modalSqlText.textContent = sqlText;
-            
-            const modalSqlTextContainer = sqlModal.querySelector('#modal-sql-text-container');
-            if (modalSqlTextContainer) {
-                modalSqlTextContainer.onclick = function() {
-                    const selection = window.getSelection();
-                    const range = document.createRange();
-                    range.selectNodeContents(modalSqlText);
-                    selection.removeAllRanges();
-                    selection.addRange(range);
-                };
-            }
+                    
+                    const modalSqlTextContainer = sqlModal.querySelector('#modal-sql-text-container');
+                    if (modalSqlTextContainer) {
+                        modalSqlTextContainer.onclick = function() {
+                            const selection = window.getSelection();
+                            const range = document.createRange();
+                            range.selectNodeContents(modalSqlText);
+                            selection.removeAllRanges();
+                            selection.addRange(range);
+                        };
+                    }
         });
     }
 
@@ -1010,5 +1010,5 @@ VACUUM ANALYZE;">VACUUM ANALYZE...</button>
         window.initializeCharts();
     }
 </script>
-    {% endif %}
+{% endif %}
 {% endblock %} 
