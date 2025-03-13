@@ -1,0 +1,683 @@
+{% extends "base.html" %}
+
+{% block title %}Backup & Restore - PostgreSQL Tool{% endblock %}
+
+{% block content %}
+<div class="container-fluid" data-show-backup-form="{{ show_backup_form|lower }}">
+    <h2 class="mb-4">Backup & Restore</h2>
+
+    {% include 'connection_selector.html' %}
+
+    {% if show_backup_form %}
+    <div class="row">
+        <!-- Create Backup -->
+        <div class="col-md-6">
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">Create Backup</h5>
+                </div>
+                <div class="card-body">
+                    <form method="POST" action="{{ url_for('backup_restore') }}" id="backupForm">
+                        {{ backup_form.csrf_token }}
+                        
+                        <div class="mb-3">
+                            <label class="form-label">{{ backup_form.backup_method.label }}</label>
+                            {{ backup_form.backup_method(class_="form-select backup-field", id="backup_method", disabled=True) }}
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">{{ backup_form.backup_type.label }}</label>
+                            {{ backup_form.backup_type(class_="form-select backup-field", id="backup_type", disabled=True) }}
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label class="form-label">{{ backup_form.db_name.label }}</label>
+                            {{ backup_form.db_name(class_="form-select backup-field", id="db_name", disabled=True) }}
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label class="form-label">{{ backup_form.backup_location.label }}</label>
+                            <div class="input-group">
+                                {{ backup_form.backup_location(class_="form-control backup-field", id="backup_location", disabled=True) }}
+                                <button type="button" class="btn btn-secondary btn-browse backup-field" disabled>Browse...</button>
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">{{ backup_form.file_name.label }}</label>
+                            <div class="input-group">
+                                {{ backup_form.file_name(class_="form-control backup-field", id="file_name", placeholder="Leave empty for auto-generated name", disabled=True) }}
+                            </div>
+                            <small class="text-muted">Optional. If left empty, a name will be generated automatically.</small>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">{{ backup_form.file_type.label }}</label>
+                            {{ backup_form.file_type(class_="form-select backup-field", id="file_type", disabled=True) }}
+                        </div>
+                        
+                        <button type="submit" name="submit" value="true" class="btn btn-primary backup-field" id="startBackup" disabled>Start Backup</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Restore Backup -->
+        <div class="col-md-6">
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">Restore Backup</h5>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-striped">
+                            <thead>
+                                <tr>
+                                    <th>Backup Name</th>
+                                    <th>Size</th>
+                                    <th>Date</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for backup in backups %}
+                                <tr>
+                                    <td>{{ backup.name }}</td>
+                                    <td>{{ backup.size }}</td>
+                                    <td>{{ backup.date }}</td>
+                                    <td>
+                                        <button class="btn btn-sm btn-success" onclick="restoreBackup('{{ backup.name }}')">
+                                            <i class="bi bi-box-arrow-in-down"></i> Restore
+                                        </button>
+                                        <button class="btn btn-sm btn-danger" onclick="deleteBackup('{{ backup.name }}')">
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% else %}
+    <div class="alert alert-info">
+        Please select a database connection and test it to access backup and restore functionality.
+    </div>
+    {% endif %}
+</div>
+
+<!-- Remote Folder Browser -->
+<div class="modal fade" id="folderBrowser" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Select Backup Location</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <!-- Alerts -->
+                <div id="folderBrowserAlerts"></div>
+                
+                <!-- Server Selector -->
+                <div class="mb-3">
+                    <div class="btn-group w-100" role="group">
+                        <input type="radio" class="btn-check" name="serverType" id="localServer" value="local" checked>
+                        <label class="btn btn-outline-primary" for="localServer">
+                            <i class="bi bi-hdd"></i> Local Server
+                        </label>
+                        
+                        <input type="radio" class="btn-check" name="serverType" id="dbServer" value="db">
+                        <label class="btn btn-outline-primary" for="dbServer">
+                            <i class="bi bi-server"></i> Remote Server
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Remote Server Connection Details -->
+                <div id="remoteServerDetails" class="mb-3" style="display: none;">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label">Server IP/Hostname</label>
+                            <input type="text" class="form-control" id="remoteHost" placeholder="e.g., 192.168.1.100">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Port</label>
+                            <input type="text" class="form-control" id="remotePort" value="22">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Username</label>
+                            <input type="text" class="form-control" id="remoteUser" placeholder="SSH username">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Password</label>
+                            <input type="password" class="form-control" id="remotePassword" placeholder="SSH password">
+                        </div>
+                        <div class="col-12">
+                            <button class="btn btn-primary" onclick="connectToRemoteServer()">
+                                <i class="bi bi-plug"></i> Connect to Server
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Current Path -->
+                <div class="d-flex align-items-center mb-3">
+                    <span class="me-2">Current location:</span>
+                    <code id="currentPath" class="flex-grow-1 p-2 bg-light rounded"></code>
+                    <button class="btn btn-outline-secondary btn-sm ms-2" onclick="navigateUp()" title="Go to parent directory">
+                        <i class="bi bi-arrow-up"></i> Up
+                    </button>
+                    <button class="btn btn-outline-secondary btn-sm ms-2" onclick="loadFolderContents(null)" title="Go to root">
+                        <i class="bi bi-house"></i> Root
+                    </button>
+                </div>
+                
+                <!-- New Folder Creation -->
+                <div class="input-group mb-3">
+                    <input type="text" id="newFolderName" class="form-control" placeholder="New folder name">
+                    <button class="btn btn-outline-secondary" type="button" onclick="createNewFolder()">
+                        <i class="bi bi-folder-plus"></i> Create Folder
+                    </button>
+                </div>
+                
+                <!-- Folder List -->
+                <div id="folderList" class="border rounded" style="height: 400px; overflow-y: auto;">
+                    <!-- Folders will be dynamically added here -->
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-primary" onclick="selectCurrentFolder()">Select Current Folder</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<!-- Make sure jQuery and Bootstrap are loaded -->
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+
+<script>
+    let currentPath = '';
+    let isDbServer = false;
+    let remoteConnection = null;
+    let folderBrowserModal = null;
+
+    // Initialize when document is ready
+    $(document).ready(function() {
+        // Initialize the modal
+        folderBrowserModal = new bootstrap.Modal(document.getElementById('folderBrowser'));
+        
+        // Function to enable form fields
+        function enableBackupForm() {
+            $('.backup-field').prop('disabled', false);
+        }
+        
+        // Check if we need to enable the form (after successful connection test)
+        var showBackupForm = $('.container-fluid').data('show-backup-form') === 'true';
+        if (showBackupForm) {
+            enableBackupForm();
+        }
+        
+        // Handle browse button click
+        $('.btn-browse').on('click', function() {
+            if (!$(this).prop('disabled')) {
+                showFolderBrowser();
+            }
+        });
+
+        // Add form submission handling
+        $('#backupForm').on('submit', function(e) {
+            e.preventDefault();
+            
+            // Validate form
+            if (!validateBackupForm()) {
+                return false;
+            }
+            
+            // Disable submit button and show loading state
+            const submitBtn = $('#startBackup');
+            const originalText = submitBtn.text();
+            submitBtn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Processing...');
+            
+            // Add the submit parameter explicitly
+            let formData = $(this).serialize();
+            if (!formData.includes('submit=')) {
+                formData += '&submit=true';
+            }
+            
+            // Submit form
+            $.ajax({
+                url: $(this).attr('action'),
+                method: 'POST',
+                data: formData,
+                success: function(response) {
+                    // Re-enable submit button
+                    submitBtn.prop('disabled', false).text(originalText);
+                    
+                    // Refresh the page to show the result
+                    location.reload();
+                },
+                error: function(xhr, status, error) {
+                    // Re-enable submit button
+                    submitBtn.prop('disabled', false).text(originalText);
+                    
+                    // Show error message
+                    showError('Error during backup: ' + error);
+                }
+            });
+        });
+
+        // Handle connection test button click
+        $('#testConnection').on('click', function() {
+            const connId = $('#connection').val();
+            if (!connId) {
+                showError('Please select a connection first');
+                return;
+            }
+
+            // Disable test button and show loading state
+            const testBtn = $(this);
+            const originalText = testBtn.text();
+            testBtn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Testing...');
+
+            // Test the connection
+            $.get('/check_connection', { connection_id: connId })
+                .done(function(response) {
+                    if (response.status === 'success') {
+                        showSuccess('Connection test successful! You can now configure backup settings.');
+                        
+                        // Enable all form fields first
+                        $('.backup-field').prop('disabled', false);
+                        
+                        // Set default values for backup form fields
+                        $('#backup_method').val('pg_dump');
+                        $('#backup_type').val('full');
+                        $('#file_type').val('sql');
+                        
+                        // Enable browse button
+                        $('.btn-browse').prop('disabled', false);
+                        
+                        // Enable start backup button
+                        $('#startBackup').prop('disabled', false);
+                        
+                        // Update database list
+                        updateDatabaseList();
+                        
+                        // Show the backup form section if hidden
+                        $('.card.mb-4').show();
+                    } else {
+                        showError('Connection test failed: ' + response.message);
+                        // Disable all form fields
+                        $('.backup-field').prop('disabled', true);
+                    }
+                })
+                .fail(function(xhr, status, error) {
+                    showError('Connection test failed: ' + error);
+                    // Disable all form fields
+                    $('.backup-field').prop('disabled', true);
+                })
+                .always(function() {
+                    // Re-enable test button
+                    testBtn.prop('disabled', false).text(originalText);
+                });
+        });
+
+        // Handle server type change
+        $('input[name="serverType"]').change(function() {
+            isDbServer = $(this).val() === 'db';
+            $('#remoteServerDetails').toggle(isDbServer);
+            if (!isDbServer) {
+                loadFolderContents(null);
+            }
+        });
+
+        // Initialize form fields if we have a connection selected
+        const connId = $('#connection').val();
+        if (connId) {
+            initializeBackupForm();
+            updateDatabaseList();
+        }
+    });
+
+    function connectToRemoteServer() {
+        const host = $('#remoteHost').val();
+        const port = $('#remotePort').val();
+        const username = $('#remoteUser').val();
+        const password = $('#remotePassword').val();
+
+        if (!host || !username || !password) {
+            showError('Please fill in all remote server details');
+            return;
+        }
+
+        // Store connection details
+        remoteConnection = {
+            host: host,
+            port: port,
+            username: username,
+            password: password
+        };
+
+        // Test connection and load root directory
+        $.ajax({
+            url: '/test_remote_connection',
+            type: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify(remoteConnection),
+            success: function(response) {
+                if (response.status === 'success') {
+                    showSuccess('Connected to remote server successfully');
+                    loadFolderContents(null);
+                } else {
+                    showError('Failed to connect: ' + response.message);
+                }
+            },
+            error: function() {
+                showError('Failed to connect to remote server');
+            }
+        });
+    }
+
+    function loadFolderContents(path = null) {
+        $('#folderList').html('<div class="text-center p-3"><div class="spinner-border text-primary" role="status"></div></div>');
+        
+        const requestData = {
+            path: path,
+            server_type: isDbServer ? 'db' : 'local'
+        };
+
+        if (isDbServer && remoteConnection) {
+            Object.assign(requestData, remoteConnection);
+        }
+
+        $.get('/list_remote_folders', requestData)
+            .done(function(response) {
+                if (response.status === 'success') {
+                    updateFolderList(response);
+                } else {
+                    showError('Error loading folders: ' + response.message);
+                }
+            })
+            .fail(function() {
+                showError('Failed to load folders');
+            });
+    }
+
+    function updateFolderList(response) {
+        currentPath = response.current_path || '/';
+        $('#currentPath').text(currentPath);
+        
+        const folderList = $('#folderList');
+        folderList.empty();
+        
+        // Add parent directory option if not at root
+        if (currentPath !== '/') {
+            folderList.append(`
+                <div class="folder-item p-2 border-bottom">
+                    <div class="d-flex align-items-center">
+                        <i class="bi bi-arrow-up me-2"></i>
+                        <span class="folder-name">..</span>
+                        <button class="btn btn-sm btn-outline-secondary ms-auto" onclick="navigateUp()">Go Up</button>
+                    </div>
+                </div>
+            `);
+        }
+        
+        response.directories.forEach(function(dir) {
+            let itemHtml = '<div class="folder-item p-2 border-bottom hover-highlight">';
+            itemHtml += '<div class="d-flex align-items-center justify-content-between">';
+            
+            // Directory information
+            itemHtml += '<div class="d-flex align-items-center flex-grow-1">';
+            itemHtml += '<i class="bi bi-folder me-2"></i>';
+            
+            itemHtml += `<div>
+                <div class="folder-name">${dir.name || dir.path.split('/').pop() || dir.path}</div>`;
+            
+            if (dir.available && dir.total) {
+                itemHtml += `
+                    <small class="text-muted">
+                        Available: ${dir.available} of ${dir.total}
+                    </small>`;
+            }
+            
+            itemHtml += '</div></div>';
+            
+            // Action buttons
+            itemHtml += `
+                <div class="ms-3">
+                    <button class="btn btn-sm btn-primary" onclick="selectFolder('${dir.path}')" title="Select this location">
+                        Select
+                    </button>
+                    <button class="btn btn-sm btn-outline-secondary ms-2" onclick="loadFolderContents('${dir.path}')" title="Browse this location">
+                        Browse
+                    </button>
+                </div>
+            `;
+            
+            itemHtml += '</div></div>';
+            folderList.append(itemHtml);
+        });
+    }
+
+    function showFolderBrowser() {
+        // Clear previous alerts
+        $('#folderBrowserAlerts').empty();
+        
+        // Reset server type to local
+        $('#localServer').prop('checked', true);
+        $('#remoteServerDetails').hide();
+        isDbServer = false;
+        
+        // Load initial folder contents
+        loadFolderContents(null);
+        
+        // Show the modal
+        folderBrowserModal.show();
+    }
+
+    function selectFolder(path) {
+        $('#backup_location').val(path);
+        folderBrowserModal.hide();
+    }
+
+    function navigateUp() {
+        const currentPath = $('#currentPath').text();
+        if (!currentPath || currentPath === '/') {
+            return;
+        }
+        
+        const parentPath = currentPath.split('/').slice(0, -1).join('/') || '/';
+        loadFolderContents(parentPath);
+    }
+
+    function selectCurrentFolder() {
+        const currentPath = $('#currentPath').text();
+        if (currentPath) {
+            $('#backup_location').val(currentPath);
+            folderBrowserModal.hide();
+        }
+    }
+
+    function createNewFolder() {
+        const folderName = $('#newFolderName').val().trim();
+        if (!folderName) {
+            showError('Please enter a folder name');
+            return;
+        }
+        
+        const currentPath = $('#currentPath').text();
+        if (!currentPath) {
+            showError('Please select a directory first');
+            return;
+        }
+        
+        $.ajax({
+            url: '/create_folder',
+            type: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify({
+                path: currentPath,
+                folder_name: folderName,
+                server_type: isDbServer ? 'db' : 'local'
+            })
+        })
+        .done(function(response) {
+            if (response.status === 'success') {
+                $('#newFolderName').val('');
+                loadFolderContents(currentPath);
+                showSuccess('Folder created successfully');
+            } else {
+                showError('Error creating folder: ' + response.message);
+            }
+        })
+        .fail(function() {
+            showError('Failed to create folder. Please try again.');
+        });
+    }
+
+    function showError(message) {
+        const alertDiv = $('<div>')
+            .addClass('alert alert-danger alert-dismissible fade show')
+            .html(`
+                ${message}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            `);
+        $('#folderBrowserAlerts').empty().append(alertDiv);
+    }
+
+    function showSuccess(message) {
+        const alertDiv = $('<div>')
+            .addClass('alert alert-success alert-dismissible fade show')
+            .html(`
+                ${message}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            `);
+        $('#folderBrowserAlerts').empty().append(alertDiv);
+    }
+
+    function restoreBackup(backupName) {
+        if (confirm('Are you sure you want to restore this backup? This will overwrite the current database.')) {
+            // Implement restore functionality
+            alert('Restore functionality will be implemented soon.');
+        }
+    }
+
+    function deleteBackup(backupName) {
+        if (confirm('Are you sure you want to delete this backup? This action cannot be undone.')) {
+            // Implement delete functionality
+            alert('Delete functionality will be implemented soon.');
+        }
+    }
+
+    function validateBackupForm() {
+        const requiredFields = ['backup_method', 'backup_type', 'db_name', 'backup_location', 'file_type'];
+        let isValid = true;
+        
+        requiredFields.forEach(field => {
+            const value = $(`#${field}`).val();
+            if (!value) {
+                showError(`Please fill in the ${field.replace('_', ' ')}`);
+                isValid = false;
+            }
+        });
+        
+        return isValid;
+    }
+
+    function updateDatabaseList() {
+        const connId = $('#connection').val();
+        if (!connId) {
+            showError('No connection selected');
+            return;
+        }
+
+        // Show loading state in the database select
+        const dbSelect = $('#db_name');
+        dbSelect.html('<option value="">Loading databases...</option>');
+        
+        // Get available databases for the selected connection
+        $.get('/get_available_databases', { connection_id: connId })
+            .done(function(response) {
+                if (response.status === 'success' && response.databases) {
+                    dbSelect.empty();
+                    
+                    // Add databases to the select
+                    response.databases.forEach(function(db) {
+                        dbSelect.append($('<option>', {
+                            value: db,
+                            text: db
+                        }));
+                    });
+                    
+                    // Enable the database select
+                    dbSelect.prop('disabled', false);
+                    
+                    // If there's only one database, select it
+                    if (response.databases.length === 1) {
+                        dbSelect.val(response.databases[0]);
+                    }
+                    
+                    // Make sure other form fields are enabled
+                    $('.backup-field').prop('disabled', false);
+                    $('.btn-browse').prop('disabled', false);
+                    $('#startBackup').prop('disabled', false);
+                } else {
+                    showError('Failed to fetch databases: ' + (response.message || 'Unknown error'));
+                    dbSelect.html('<option value="">No databases available</option>');
+                    $('.backup-field').prop('disabled', true);
+                }
+            })
+            .fail(function(xhr, status, error) {
+                showError('Failed to fetch databases: ' + error);
+                dbSelect.html('<option value="">Error loading databases</option>');
+                $('.backup-field').prop('disabled', true);
+            });
+    }
+
+    // Add this new function to initialize form fields
+    function initializeBackupForm() {
+        // Set default values
+        $('#backup_method').val('pg_dump');
+        $('#backup_type').val('full');
+        $('#file_type').val('sql');
+        
+        // Clear other fields
+        $('#backup_location').val('');
+        $('#file_name').val('');
+        
+        // Enable all fields
+        $('.backup-field').prop('disabled', false);
+        $('.btn-browse').prop('disabled', false);
+        $('#startBackup').prop('disabled', false);
+    }
+</script>
+
+<style>
+    .hover-highlight:hover {
+        background-color: rgba(0,0,0,0.05);
+    }
+    
+    .progress {
+        background-color: rgba(0,0,0,0.1);
+    }
+    
+    .folder-item {
+        transition: background-color 0.2s;
+    }
+    
+    #currentPath {
+        word-break: break-all;
+    }
+    
+    .folder-name {
+        word-break: break-all;
+    }
+</style>
+{% endblock %} 

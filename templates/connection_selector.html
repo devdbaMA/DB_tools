@@ -1,0 +1,17 @@
+<div class="card mb-4">
+    <div class="card-header">
+        <h5 class="card-title mb-0">Database Connection</h5>
+    </div>
+    <div class="card-body">
+        <form method="POST" class="row g-3 align-items-end">
+            {{ conn_form.csrf_token }}
+            <div class="col-md-8">
+                <label class="form-label">{{ conn_form.connection.label }}</label>
+                {{ conn_form.connection(class="form-select") }}
+            </div>
+            <div class="col-md-4">
+                {{ conn_form.test(class="btn btn-primary w-100") }}
+            </div>
+        </form>
+    </div>
+</div> 

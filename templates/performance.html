@@ -1,0 +1,1594 @@
+{% extends "base.html" %}
+
+{% block title %}Database Performance - PostgreSQL Tool{% endblock %}
+
+{% block head %}
+{{ super() }}
+<!-- Add Chart.js library -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
+<style>
+    .activity-chart-container {
+        position: relative;
+        height: 300px;
+        background-color: #f8f9fa;
+        border: 1px solid #ddd;
+    }
+    .time-label {
+        font-size: 11px;
+        color: #666;
+    }
+    .detail-header {
+        background-color: #e9ecef;
+        padding: 8px 12px;
+        border-bottom: 1px solid #dee2e6;
+        font-weight: 500;
+    }
+    .sql-id-link {
+        font-family: monospace;
+        color: #0d6efd;
+        text-decoration: none;
+    }
+    .sql-id-link:hover {
+        text-decoration: underline;
+    }
+    .activity-bar {
+        height: 16px;
+        display: flex;
+    }
+    .activity-segment {
+        height: 100%;
+    }
+    .segment-cpu {
+        background-color: #28a745;
+    }
+    .segment-io {
+        background-color: #007bff;
+    }
+    .segment-other {
+        background-color: #fd7e14;
+    }
+    .legend-item {
+        display: flex;
+        align-items: center;
+        margin-right: 15px;
+        font-size: 12px;
+    }
+    .legend-color {
+        width: 12px;
+        height: 12px;
+        margin-right: 5px;
+    }
+    .header-actions {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 10px;
+    }
+    .time-selector {
+        display: flex;
+        align-items: center;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="header-actions">
+        <h2 class="mb-0">Top Activity</h2>
+        <div class="time-selector">
+            <span class="me-2">Real Time:</span>
+            <button class="btn btn-sm btn-outline-secondary me-2" id="manual-refresh">Manual Refresh</button>
+            <button class="btn btn-sm btn-primary" id="auto-refresh">
+                <i class="bi bi-arrow-clockwise"></i>
+            </button>
+        </div>
+    </div>
+    <p class="text-muted">Drag the shaded box to change the time period for the detail section below.</p>
+
+    {% include 'connection_selector.html' %}
+
+    {% if show_data %}
+    <!-- Extension Status -->
+    {% if extension_status and extension_status.library_loaded and not extension_status.extension_created %}
+    <div class="alert alert-warning mb-4">
+        <p>The pg_stat_statements library is loaded, but the extension is not created in this database.</p>
+        <form action="{{ url_for('create_pg_stat_statements') }}" method="post" class="mt-2">
+            <button type="submit" class="btn btn-primary">Create pg_stat_statements Extension</button>
+        </form>
+    </div>
+    {% endif %}
+    
+    <!-- Activity Graph -->
+    <div class="card mb-4">
+        <div class="card-body p-0">
+            <div class="row">
+                <div class="col-md-10">
+                    <div class="activity-chart-container">
+                        <canvas id="activity-chart"></canvas>
+        </div>
+                </div>
+                <div class="col-md-2 border-start p-2">
+                    <div class="d-flex flex-column">
+                        <div class="legend-item mb-2"><div class="legend-color segment-other"></div> Other</div>
+                        <div class="legend-item mb-2"><div class="legend-color" style="background-color: #6c757d;"></div> Cluster</div>
+                        <div class="legend-item mb-2"><div class="legend-color" style="background-color: #ffc107;"></div> Queueing</div>
+                        <div class="legend-item mb-2"><div class="legend-color" style="background-color: #17a2b8;"></div> Network</div>
+                        <div class="legend-item mb-2"><div class="legend-color" style="background-color: #6f42c1;"></div> Administrative</div>
+                        <div class="legend-item mb-2"><div class="legend-color" style="background-color: #5a6268;"></div> Configuration</div>
+                        <div class="legend-item mb-2"><div class="legend-color segment-other"></div> Commit</div>
+                        <div class="legend-item mb-2"><div class="legend-color" style="background-color: #dc3545;"></div> Application</div>
+                        <div class="legend-item mb-2"><div class="legend-color" style="background-color: #6610f2;"></div> Concurrency</div>
+                        <div class="legend-item mb-2"><div class="legend-color segment-io"></div> System I/O</div>
+                        <div class="legend-item mb-2"><div class="legend-color" style="background-color: #0dcaf0;"></div> User I/O</div>
+                        <div class="legend-item mb-2"><div class="legend-color" style="background-color: #adb5bd;"></div> Scheduler</div>
+                        <div class="legend-item mb-2"><div class="legend-color segment-cpu"></div> CPU + CPU Wait</div>
+                    </div>
+                </div>
+            </div>
+            <div class="p-2 border-top">
+                <div class="d-flex align-items-center">
+                    <div class="me-3">
+                        <span class="badge bg-secondary">Selected:</span>
+                        <span id="selected-range">Last 30 minutes</span>
+                    </div>
+                    <div>
+                        <button class="btn btn-sm btn-outline-secondary me-1 time-range-btn active" data-range="Last 30 minutes">30m</button>
+                        <button class="btn btn-sm btn-outline-secondary me-1 time-range-btn" data-range="Last 1 hour">1h</button>
+                        <button class="btn btn-sm btn-outline-secondary me-1 time-range-btn" data-range="Last 2 hours">2h</button>
+                        <button class="btn btn-sm btn-outline-secondary me-1 time-range-btn" data-range="Last 6 hours">6h</button>
+                        <button class="btn btn-sm btn-outline-secondary time-range-btn" data-range="Last 24 hours">24h</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Detail for Selected Time Interval -->
+    <div class="card mb-4">
+        <div class="card-header bg-light">
+            <h5 class="card-title mb-0">Detail for Selected 5 Minute Interval</h5>
+            <div class="small text-muted">Start Time: <span id="selected-time"></span></div>
+        </div>
+        <div class="card-body p-0">
+            <!-- Tabs for different views -->
+            <ul class="nav nav-tabs" id="performanceTabs" role="tablist">
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link active" id="sql-tab" data-bs-toggle="tab" data-bs-target="#sql" type="button" role="tab" aria-controls="sql" aria-selected="true">Top SQL</button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="sessions-tab" data-bs-toggle="tab" data-bs-target="#sessions" type="button" role="tab" aria-controls="sessions" aria-selected="false">Top Sessions</button>
+                </li>
+            </ul>
+            
+            <div class="tab-content" id="performanceTabsContent">
+                <!-- Top SQL Tab -->
+                <div class="tab-pane fade show active" id="sql" role="tabpanel" aria-labelledby="sql-tab">
+                    <div class="d-flex justify-content-between align-items-center p-2 bg-light border-bottom">
+                        <div>
+                            <button class="btn btn-sm btn-outline-secondary me-1">Schedule SQL Tuning Advisor</button>
+                            <button class="btn btn-sm btn-outline-secondary">Create SQL Tuning Set</button>
+                        </div>
+                        <div>
+                            <a href="#" class="text-decoration-none">Select All</a> | 
+                            <a href="#" class="text-decoration-none">Select None</a>
+                        </div>
+                    </div>
+                    
+            <div class="table-responsive">
+                        <table class="table table-hover table-striped mb-0">
+                            <thead class="bg-light">
+                                <tr>
+                                    <th style="width: 30px;"><input type="checkbox" class="form-check-input"></th>
+                                    <th>Select Activity (%)</th>
+                                    <th>SQL ID</th>
+                                    <th>SQL Type</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                                {% if slow_queries %}
+                        {% for query in slow_queries %}
+                        <tr>
+                                        <td><input type="checkbox" class="form-check-input"></td>
+                                        <td>
+                                            <div class="d-flex align-items-center">
+                                                <div class="activity-bar me-2" style="width: 150px;">
+                                                    {% if slow_queries[0][2] > 0 %}
+                                                        {% set percentage = (query[2] / slow_queries[0][2] * 100)|round %}
+                                                    {% else %}
+                                                        {% set percentage = 0 %}
+                                                    {% endif %}
+                                                    {% set cpu_pct = percentage * 0.6 %}
+                                                    {% set io_pct = percentage * 0.3 %}
+                                                    {% set other_pct = percentage * 0.1 %}
+                                                    <div class="activity-segment segment-cpu" style="width: {{ cpu_pct }}%;"></div>
+                                                    <div class="activity-segment segment-io" style="width: {{ io_pct }}%;"></div>
+                                                    <div class="activity-segment segment-other" style="width: {{ other_pct }}%;"></div>
+                                                </div>
+                                                <span>{{ '{:.2f}'.format(percentage) }}</span>
+                                            </div>
+                                        </td>
+                                        <td><button class="btn btn-sm btn-outline-primary sql-id-link" data-bs-toggle="modal" data-bs-target="#sqlModal" data-sql-id="{{ query[0][:15] if query[0] else 'unknown' }}" data-sql-text="{{ query[0] if query[0] else 'No SQL text available' }}">{{ query[0][:15] if query[0] else 'unknown' }}</button></td>
+                                        <td>{{ query[0][:6] if query[0] else 'SELECT' }}</td>
+                        </tr>
+                        {% endfor %}
+                                {% else %}
+                                    <tr>
+                                        <td colspan="4" class="text-center py-3">No SQL query data available</td>
+                                    </tr>
+                                {% endif %}
+                    </tbody>
+                </table>
+        </div>
+    </div>
+
+                <!-- Top Sessions Tab -->
+                <div class="tab-pane fade" id="sessions" role="tabpanel" aria-labelledby="sessions-tab">
+                    <div class="d-flex justify-content-between align-items-center p-2 bg-light border-bottom">
+                        <div>
+                            <select class="form-select form-select-sm" style="width: auto;">
+                                <option>View: Top Sessions</option>
+                            </select>
+                </div>
+                    </div>
+                    
+                    <div class="table-responsive">
+                        <table class="table table-hover table-striped mb-0">
+                            <thead class="bg-light">
+                                <tr>
+                                    <th>Activity (%)</th>
+                                    <th>Session ID</th>
+                                    <th>User Name</th>
+                                    <th>Program</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% if index_stats %}
+                                {% for stat in index_stats %}
+                                <tr>
+                                        <td>
+                                            <div class="d-flex align-items-center">
+                                                <div class="activity-bar me-2" style="width: 150px;">
+                                                    {% if index_stats[0][3] > 0 %}
+                                                        {% set percentage = (stat[3] / index_stats[0][3] * 100)|round %}
+                                                    {% else %}
+                                                        {% set percentage = 0 %}
+                                                    {% endif %}
+                                                    {% set cpu_pct = percentage * 0.6 %}
+                                                    {% set io_pct = percentage * 0.3 %}
+                                                    {% set other_pct = percentage * 0.1 %}
+                                                    <div class="activity-segment segment-cpu" style="width: {{ cpu_pct }}%;"></div>
+                                                    <div class="activity-segment segment-io" style="width: {{ io_pct }}%;"></div>
+                                                    <div class="activity-segment segment-other" style="width: {{ other_pct }}%;"></div>
+                                                </div>
+                                                <span>{{ '{:.2f}'.format(percentage) }}</span>
+                                            </div>
+                                        </td>
+                                        <td>{{ stat[0] if stat[0] else '123' }}</td>
+                                        <td>postgres</td>
+                                        <td>psql</td>
+                                </tr>
+                                {% endfor %}
+                                {% else %}
+                                    <tr>
+                                        <td colspan="4" class="text-center py-3">No session data available</td>
+                                    </tr>
+                                {% endif %}
+                            </tbody>
+                        </table>
+                    </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    {% else %}
+    <div class="alert alert-info">
+        Please select a database connection and test it to view performance data.
+    </div>
+    {% endif %}
+</div>
+
+<!-- Additional Diagrams Section -->
+{% if show_data %}
+<div class="row mb-4">
+        <div class="col-md-6">
+        <div class="card">
+            <div class="card-header bg-primary text-white">
+                <h5 class="card-title mb-0">Database Distribution</h5>
+                </div>
+                <div class="card-body">
+                <canvas id="dbDistributionChart" height="250"></canvas>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header bg-success text-white">
+                <h5 class="card-title mb-0">Query Types Distribution</h5>
+            </div>
+            <div class="card-body">
+                <canvas id="queryTypesChart" height="250"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Resource Usage Section -->
+<div class="row mb-4">
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-header bg-info text-white">
+                <h5 class="card-title mb-0">Resource Usage Over Time</h5>
+            </div>
+            <div class="card-body">
+                <canvas id="resourceUsageChart" height="250"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Detailed Activity Monitoring Section -->
+<div class="row mb-4">
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-header bg-primary text-white">
+                <h5 class="card-title mb-0">Detailed Activity Monitoring</h5>
+            </div>
+            <div class="card-body">
+                <ul class="nav nav-tabs" id="activityTabs" role="tablist">
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link active" id="cpu-tab" data-bs-toggle="tab" data-bs-target="#cpu" type="button" role="tab" aria-controls="cpu" aria-selected="true">CPU + CPU Wait</button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="scheduler-tab" data-bs-toggle="tab" data-bs-target="#scheduler" type="button" role="tab" aria-controls="scheduler" aria-selected="false">Scheduler</button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="userio-tab" data-bs-toggle="tab" data-bs-target="#userio" type="button" role="tab" aria-controls="userio" aria-selected="false">User I/O</button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="systemio-tab" data-bs-toggle="tab" data-bs-target="#systemio" type="button" role="tab" aria-controls="systemio" aria-selected="false">System I/O</button>
+                    </li>
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle" data-bs-toggle="dropdown" href="#" role="button" aria-expanded="false">More</a>
+                        <ul class="dropdown-menu">
+                            <li><button class="dropdown-item" id="concurrency-tab" data-bs-toggle="tab" data-bs-target="#concurrency" type="button" role="tab">Concurrency</button></li>
+                            <li><button class="dropdown-item" id="application-tab" data-bs-toggle="tab" data-bs-target="#application" type="button" role="tab">Application</button></li>
+                            <li><button class="dropdown-item" id="commit-tab" data-bs-toggle="tab" data-bs-target="#commit" type="button" role="tab">Commit</button></li>
+                            <li><button class="dropdown-item" id="configuration-tab" data-bs-toggle="tab" data-bs-target="#configuration" type="button" role="tab">Configuration</button></li>
+                            <li><button class="dropdown-item" id="administrative-tab" data-bs-toggle="tab" data-bs-target="#administrative" type="button" role="tab">Administrative</button></li>
+                            <li><button class="dropdown-item" id="network-tab" data-bs-toggle="tab" data-bs-target="#network" type="button" role="tab">Network</button></li>
+                            <li><button class="dropdown-item" id="queueing-tab" data-bs-toggle="tab" data-bs-target="#queueing" type="button" role="tab">Queueing</button></li>
+                            <li><button class="dropdown-item" id="cluster-tab" data-bs-toggle="tab" data-bs-target="#cluster" type="button" role="tab">Cluster</button></li>
+                            <li><button class="dropdown-item" id="other-tab" data-bs-toggle="tab" data-bs-target="#other" type="button" role="tab">Other</button></li>
+                        </ul>
+                    </li>
+                </ul>
+                
+                <div class="tab-content pt-3" id="activityTabsContent">
+                    <!-- CPU + CPU Wait Tab -->
+                    <div class="tab-pane fade show active" id="cpu" role="tabpanel" aria-labelledby="cpu-tab">
+                        <div class="row">
+                            <div class="col-md-8">
+                                <canvas id="cpuChart" height="250"></canvas>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="card">
+                                    <div class="card-header bg-light">
+                                        <h6 class="card-title mb-0">CPU + CPU Wait Stats</h6>
+                                    </div>
+                                    <div class="card-body">
+                                        <table class="table table-sm">
+                                            <tbody>
+                                                <tr>
+                                                    <th>Current Usage:</th>
+                                                    <td><span class="badge bg-primary">42%</span></td>
+                                </tr>
+                                                <tr>
+                                                    <th>Peak Usage:</th>
+                                                    <td><span class="badge bg-danger">78%</span></td>
+                                                </tr>
+                                                <tr>
+                                                    <th>Average:</th>
+                                                    <td><span class="badge bg-success">35%</span></td>
+                                                </tr>
+                                                <tr>
+                                                    <th>Top Query:</th>
+                                                    <td>
+                                                        <button class="btn btn-sm btn-outline-primary sql-id-link" data-bs-toggle="modal" data-bs-target="#sqlModal" data-sql-id="SELECT_CPU" data-sql-text="SELECT 
+    p.pid, 
+    p.usename, 
+    p.application_name,
+    p.client_addr, 
+    p.client_hostname,
+    p.state,
+    now() - p.query_start AS duration,
+    p.wait_event_type,
+    p.wait_event,
+    p.query
+FROM 
+    pg_stat_activity p
+WHERE 
+    p.state = 'active'
+    AND p.pid <> pg_backend_pid()
+ORDER BY 
+    duration DESC
+LIMIT 10;">SELECT * FROM pg_stat_activity...</button>
+                                                    </td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Scheduler Tab -->
+                    <div class="tab-pane fade" id="scheduler" role="tabpanel" aria-labelledby="scheduler-tab">
+                        <div class="row">
+                            <div class="col-md-8">
+                                <canvas id="schedulerChart" height="250"></canvas>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="card">
+                                    <div class="card-header bg-light">
+                                        <h6 class="card-title mb-0">Scheduler Stats</h6>
+                                    </div>
+                                    <div class="card-body">
+                                        <table class="table table-sm">
+                            <tbody>
+                                                <tr>
+                                                    <th>Current Usage:</th>
+                                                    <td><span class="badge bg-primary">15%</span></td>
+                                </tr>
+                                                <tr>
+                                                    <th>Peak Usage:</th>
+                                                    <td><span class="badge bg-danger">32%</span></td>
+                                                </tr>
+                                                <tr>
+                                                    <th>Average:</th>
+                                                    <td><span class="badge bg-success">12%</span></td>
+                                                </tr>
+                                                <tr>
+                                                    <th>Top Query:</th>
+                                                    <td>
+                                                        <button class="btn btn-sm btn-outline-primary sql-id-link" data-bs-toggle="modal" data-bs-target="#sqlModal" data-sql-id="UPDATE_STATS" data-sql-text="UPDATE pg_stat_statements_info
+SET dealloc = now(),
+    stats_reset = now()
+WHERE dbid = current_database()::oid;
+
+UPDATE pg_stat_statements
+SET calls = 0,
+    total_exec_time = 0,
+    rows = 0,
+    shared_blks_hit = 0,
+    shared_blks_read = 0,
+    shared_blks_dirtied = 0,
+    shared_blks_written = 0,
+    local_blks_hit = 0,
+    local_blks_read = 0,
+    local_blks_dirtied = 0,
+    local_blks_written = 0,
+    temp_blks_read = 0,
+    temp_blks_written = 0,
+    blk_read_time = 0,
+    blk_write_time = 0
+WHERE dbid = current_database()::oid;">UPDATE stats...</button>
+                                                    </td>
+                                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+                    
+                    <!-- User I/O Tab -->
+                    <div class="tab-pane fade" id="userio" role="tabpanel" aria-labelledby="userio-tab">
+                        <div class="row">
+                            <div class="col-md-8">
+                                <canvas id="userioChart" height="250"></canvas>
+    </div>
+                            <div class="col-md-4">
+                                <div class="card">
+                                    <div class="card-header bg-light">
+                                        <h6 class="card-title mb-0">User I/O Stats</h6>
+                                    </div>
+                                    <div class="card-body">
+                                        <table class="table table-sm">
+                                            <tbody>
+                                                <tr>
+                                                    <th>Current Usage:</th>
+                                                    <td><span class="badge bg-primary">28%</span></td>
+                                                </tr>
+                                                <tr>
+                                                    <th>Peak Usage:</th>
+                                                    <td><span class="badge bg-danger">65%</span></td>
+                                                </tr>
+                                                <tr>
+                                                    <th>Average:</th>
+                                                    <td><span class="badge bg-success">22%</span></td>
+                                                </tr>
+                                                <tr>
+                                                    <th>Top Query:</th>
+                                                    <td>
+                                                        <button class="btn btn-sm btn-outline-primary sql-id-link" data-bs-toggle="modal" data-bs-target="#sqlModal" data-sql-id="SELECT_LARGE" data-sql-text="SELECT 
+    t1.id,
+    t1.name,
+    t1.description,
+    t1.created_at,
+    t1.updated_at,
+    t2.category_name,
+    t3.tag_name,
+    t4.user_id,
+    t4.username,
+    t4.email
+FROM 
+    large_table t1
+LEFT JOIN 
+    categories t2 ON t1.category_id = t2.id
+LEFT JOIN 
+    tags t3 ON t1.tag_id = t3.id
+LEFT JOIN 
+    users t4 ON t1.user_id = t4.user_id
+WHERE 
+    t1.created_at > '2023-01-01'
+    AND t2.category_name IN ('Electronics', 'Computers', 'Accessories')
+    AND t4.status = 'active'
+ORDER BY 
+    t1.created_at DESC
+LIMIT 1000;">SELECT * FROM large_table...</button>
+                                                    </td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+</div>
+                    
+                    <!-- System I/O Tab -->
+                    <div class="tab-pane fade" id="systemio" role="tabpanel" aria-labelledby="systemio-tab">
+                        <div class="row">
+                            <div class="col-md-8">
+                                <canvas id="systemioChart" height="250"></canvas>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="card">
+                                    <div class="card-header bg-light">
+                                        <h6 class="card-title mb-0">System I/O Stats</h6>
+                                    </div>
+                                    <div class="card-body">
+                                        <table class="table table-sm">
+                                            <tbody>
+                                                <tr>
+                                                    <th>Current Usage:</th>
+                                                    <td><span class="badge bg-primary">18%</span></td>
+                                                </tr>
+                                                <tr>
+                                                    <th>Peak Usage:</th>
+                                                    <td><span class="badge bg-danger">45%</span></td>
+                                                </tr>
+                                                <tr>
+                                                    <th>Average:</th>
+                                                    <td><span class="badge bg-success">15%</span></td>
+                                                </tr>
+                                                <tr>
+                                                    <th>Top Query:</th>
+                                                    <td>
+                                                        <button class="btn btn-sm btn-outline-primary sql-id-link" data-bs-toggle="modal" data-bs-target="#sqlModal" data-sql-id="VACUUM_ANALYZE" data-sql-text="VACUUM ANALYZE table_name;
+VACUUM (ANALYZE, VERBOSE) table_name;
+VACUUM (FULL, ANALYZE, VERBOSE) table_name;
+
+-- With additional options
+VACUUM (FULL, FREEZE, ANALYZE, VERBOSE) table_name;
+
+-- For specific columns
+VACUUM ANALYZE table_name(column1, column2);
+
+-- For all tables in the current database
+VACUUM ANALYZE;">VACUUM ANALYZE...</button>
+                                                    </td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Other tabs (Concurrency, Application, etc.) follow the same pattern -->
+                    <div class="tab-pane fade" id="concurrency" role="tabpanel" aria-labelledby="concurrency-tab">
+                        <div class="row">
+                            <div class="col-md-8">
+                                <canvas id="concurrencyChart" height="250"></canvas>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="card">
+                                    <div class="card-header bg-light">
+                                        <h6 class="card-title mb-0">Concurrency Stats</h6>
+                                    </div>
+                                    <div class="card-body">
+                                        <table class="table table-sm">
+                                            <tbody>
+                                                <tr>
+                                                    <th>Current Usage:</th>
+                                                    <td><span class="badge bg-primary">12%</span></td>
+                                                </tr>
+                                                <tr>
+                                                    <th>Peak Usage:</th>
+                                                    <td><span class="badge bg-danger">38%</span></td>
+                                                </tr>
+                                                <tr>
+                                                    <th>Average:</th>
+                                                    <td><span class="badge bg-success">10%</span></td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Remaining tabs would be implemented similarly -->
+                    <div class="tab-pane fade" id="application" role="tabpanel" aria-labelledby="application-tab">
+                        <canvas id="applicationChart" height="250"></canvas>
+                    </div>
+                    <div class="tab-pane fade" id="commit" role="tabpanel" aria-labelledby="commit-tab">
+                        <canvas id="commitChart" height="250"></canvas>
+                    </div>
+                    <div class="tab-pane fade" id="configuration" role="tabpanel" aria-labelledby="configuration-tab">
+                        <canvas id="configurationChart" height="250"></canvas>
+                    </div>
+                    <div class="tab-pane fade" id="administrative" role="tabpanel" aria-labelledby="administrative-tab">
+                        <canvas id="administrativeChart" height="250"></canvas>
+                    </div>
+                    <div class="tab-pane fade" id="network" role="tabpanel" aria-labelledby="network-tab">
+                        <canvas id="networkChart" height="250"></canvas>
+                    </div>
+                    <div class="tab-pane fade" id="queueing" role="tabpanel" aria-labelledby="queueing-tab">
+                        <canvas id="queueingChart" height="250"></canvas>
+                    </div>
+                    <div class="tab-pane fade" id="cluster" role="tabpanel" aria-labelledby="cluster-tab">
+                        <canvas id="clusterChart" height="250"></canvas>
+                    </div>
+                    <div class="tab-pane fade" id="other" role="tabpanel" aria-labelledby="other-tab">
+                        <canvas id="otherChart" height="250"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Refresh Button -->
+<div class="position-fixed bottom-0 end-0 p-3">
+    <button onclick="location.reload()" class="btn btn-primary rounded-circle" style="width: 50px; height: 50px;">
+        <i class="bi bi-arrow-clockwise"></i>
+    </button>
+</div>
+
+<!-- SQL Modal -->
+<div class="modal fade" id="sqlModal" tabindex="-1" aria-labelledby="sqlModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title" id="sqlModalLabel">SQL Query Details</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label fw-bold">SQL ID:</label>
+                    <span id="modal-sql-id" class="badge bg-primary fs-6 px-3 py-2"></span>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fw-bold">Full SQL Text:</label>
+                    <div id="modal-sql-text-container" class="p-3 bg-light border rounded" style="max-height: 400px; overflow-y: auto;">
+                        <pre id="modal-sql-text" style="font-family: 'Courier New', monospace; white-space: pre-wrap; margin-bottom: 0; font-size: 14px;"></pre>
+                    </div>
+                    <div class="mt-2 small text-muted">Click anywhere in the SQL text to select all</div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary">Explain Plan</button>
+                <button type="button" class="btn btn-outline-primary">Tune SQL</button>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+    {% if show_data %}
+<script>
+    // Set the current date/time for the selected time interval
+    document.addEventListener('DOMContentLoaded', function() {
+        const now = new Date();
+        const options = { 
+            year: 'numeric', 
+            month: 'long', 
+            day: 'numeric',
+            hour: 'numeric',
+            minute: 'numeric',
+            second: 'numeric',
+            timeZoneName: 'short'
+        };
+        document.getElementById('selected-time').textContent = now.toLocaleDateString('en-US', options);
+        
+        // Set up refresh buttons
+        document.getElementById('manual-refresh').addEventListener('click', function() {
+        location.reload();
+        });
+        
+        // Auto-refresh is enabled by default
+        const autoRefreshBtn = document.getElementById('auto-refresh');
+        autoRefreshBtn.classList.add('active');
+        let refreshInterval = setInterval(function() {
+            location.reload();
+        }, 60000); // Refresh every 1 minute
+        autoRefreshBtn.innerHTML = '<i class="bi bi-pause"></i>';
+        autoRefreshBtn.setAttribute('data-interval', refreshInterval);
+        
+        autoRefreshBtn.addEventListener('click', function() {
+            const btn = this;
+            btn.classList.toggle('active');
+            if (btn.classList.contains('active')) {
+                refreshInterval = setInterval(function() {
+                    location.reload();
+                }, 60000); // Refresh every 1 minute
+                btn.setAttribute('data-interval', refreshInterval);
+                btn.innerHTML = '<i class="bi bi-pause"></i>';
+            } else {
+                clearInterval(btn.getAttribute('data-interval'));
+                btn.innerHTML = '<i class="bi bi-arrow-clockwise"></i>';
+            }
+        });
+        
+        // Set up time range buttons
+        const timeButtons = document.querySelectorAll('.time-range-btn');
+        timeButtons.forEach(btn => {
+            btn.addEventListener('click', function() {
+                timeButtons.forEach(b => b.classList.remove('active'));
+                this.classList.add('active');
+                document.getElementById('selected-range').textContent = this.getAttribute('data-range');
+                // In a real app, this would trigger a data reload for the selected time range
+            });
+        });
+    });
+
+    // Activity chart
+    document.addEventListener('DOMContentLoaded', function() {
+        // Generate random data for demonstration
+        const labels = [];
+        const cpuData = [];
+        const userIOData = [];
+        const systemIOData = [];
+        const commitData = [];
+        const applicationData = [];
+        const concurrencyData = [];
+        const configData = [];
+        const otherData = [];
+        const clusterData = [];
+        const queueingData = [];
+        const networkData = [];
+        const administrativeData = [];
+        const schedulerData = [];
+        
+        const now = new Date();
+        for (let i = 30; i >= 0; i--) {
+            const time = new Date(now.getTime() - i * 60000);
+            labels.push(time.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}));
+            
+            // Generate more realistic looking data with peaks and valleys
+            let baseValue = Math.random() * 0.2;
+            
+            // Default low values
+            let cpuVal = baseValue;
+            let userIOVal = baseValue;
+            let systemIOVal = baseValue;
+            let commitVal = baseValue;
+            let applicationVal = baseValue;
+            let concurrencyVal = baseValue;
+            let configVal = baseValue;
+            let otherVal = baseValue;
+            let clusterVal = baseValue;
+            let queueingVal = baseValue;
+            let networkVal = baseValue;
+            let administrativeVal = baseValue;
+            let schedulerVal = baseValue;
+            
+            // Create activity spikes at specific intervals to mimic the image
+            if (i >= 5 && i <= 10 || i >= 18 && i <= 22 || i >= 25 && i <= 30) {
+                // High activity periods
+                let activityMultiplier = 0;
+                
+                if (i >= 25 && i <= 30) {
+                    // First peak (rightmost in chart)
+                    activityMultiplier = 6 - Math.abs(27.5 - i) * 0.8;
+                } else if (i >= 18 && i <= 22) {
+                    // Middle peak
+                    activityMultiplier = 5 - Math.abs(20 - i) * 0.8;
+                } else if (i >= 5 && i <= 10) {
+                    // Last peak (leftmost in chart)
+                    activityMultiplier = 4 - Math.abs(7.5 - i) * 0.8;
+                }
+                
+                // Distribute activity across different categories
+                cpuVal = Math.max(0, Math.min(2, Math.random() * 0.8 + 0.4)) * activityMultiplier * 0.2;
+                userIOVal = Math.max(0, Math.min(1.5, Math.random() * 0.6 + 0.3)) * activityMultiplier * 0.2;
+                systemIOVal = Math.max(0, Math.min(1.2, Math.random() * 0.5 + 0.2)) * activityMultiplier * 0.3;
+                commitVal = Math.max(0, Math.min(2.5, Math.random() * 1.2 + 0.8)) * activityMultiplier * 0.4;
+                applicationVal = Math.max(0, Math.min(0.8, Math.random() * 0.4 + 0.2)) * activityMultiplier * 0.1;
+                concurrencyVal = Math.max(0, Math.min(0.5, Math.random() * 0.3 + 0.1)) * activityMultiplier * 0.05;
+                configVal = Math.max(0, Math.min(0.3, Math.random() * 0.2 + 0.1)) * activityMultiplier * 0.05;
+                otherVal = Math.max(0, Math.min(0.4, Math.random() * 0.2 + 0.1)) * activityMultiplier * 0.05;
+                clusterVal = Math.max(0, Math.min(0.6, Math.random() * 0.3 + 0.2)) * activityMultiplier * 0.1;
+                queueingVal = Math.max(0, Math.min(0.5, Math.random() * 0.3 + 0.1)) * activityMultiplier * 0.05;
+                networkVal = Math.max(0, Math.min(0.7, Math.random() * 0.4 + 0.2)) * activityMultiplier * 0.1;
+                administrativeVal = Math.max(0, Math.min(0.4, Math.random() * 0.2 + 0.1)) * activityMultiplier * 0.05;
+                schedulerVal = Math.max(0, Math.min(0.6, Math.random() * 0.3 + 0.2)) * activityMultiplier * 0.1;
+            }
+            
+            cpuData.push(cpuVal);
+            userIOData.push(userIOVal);
+            systemIOData.push(systemIOVal);
+            commitData.push(commitVal);
+            applicationData.push(applicationVal);
+            concurrencyData.push(concurrencyVal);
+            configData.push(configVal);
+            otherData.push(otherVal);
+            clusterData.push(clusterVal);
+            queueingData.push(queueingVal);
+            networkData.push(networkVal);
+            administrativeData.push(administrativeVal);
+            schedulerData.push(schedulerVal);
+        }
+        
+        const ctx = document.getElementById('activity-chart');
+        if (ctx) {
+            new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        {
+                            label: 'CPU + CPU Wait',
+                            data: cpuData,
+                            backgroundColor: 'rgba(0, 180, 0, 0.8)',
+                            borderColor: 'rgba(0, 180, 0, 0)',
+                            fill: true,
+                            tension: 0.4,
+                            stack: 'Stack 0'
+                        },
+                        {
+                            label: 'Scheduler',
+                            data: schedulerData,
+                            backgroundColor: 'rgba(173, 216, 230, 0.8)',
+                            borderColor: 'rgba(173, 216, 230, 0)',
+                            fill: true,
+                            tension: 0.4,
+                            stack: 'Stack 0'
+                        },
+                        {
+                            label: 'User I/O',
+                            data: userIOData,
+                            backgroundColor: 'rgba(0, 191, 255, 0.8)',
+                            borderColor: 'rgba(0, 191, 255, 0)',
+                            fill: true,
+                            tension: 0.4,
+                            stack: 'Stack 0'
+                        },
+                        {
+                            label: 'System I/O',
+                            data: systemIOData,
+                            backgroundColor: 'rgba(30, 144, 255, 0.8)',
+                            borderColor: 'rgba(30, 144, 255, 0)',
+                            fill: true,
+                            tension: 0.4,
+                            stack: 'Stack 0'
+                        },
+                        {
+                            label: 'Concurrency',
+                            data: concurrencyData,
+                            backgroundColor: 'rgba(139, 0, 139, 0.8)',
+                            borderColor: 'rgba(139, 0, 139, 0)',
+                            fill: true,
+                            tension: 0.4,
+                            stack: 'Stack 0'
+                        },
+                        {
+                            label: 'Application',
+                            data: applicationData,
+                            backgroundColor: 'rgba(178, 34, 34, 0.8)',
+                            borderColor: 'rgba(178, 34, 34, 0)',
+                            fill: true,
+                            tension: 0.4,
+                            stack: 'Stack 0'
+                        },
+                        {
+                            label: 'Commit',
+                            data: commitData,
+                            backgroundColor: 'rgba(255, 140, 0, 0.8)',
+                            borderColor: 'rgba(255, 140, 0, 0)',
+                            fill: true,
+                            tension: 0.4,
+                            stack: 'Stack 0'
+                        },
+                        {
+                            label: 'Configuration',
+                            data: configData,
+                            backgroundColor: 'rgba(128, 128, 128, 0.8)',
+                            borderColor: 'rgba(128, 128, 128, 0)',
+                            fill: true,
+                            tension: 0.4,
+                            stack: 'Stack 0'
+                        },
+                        {
+                            label: 'Administrative',
+                            data: administrativeData,
+                            backgroundColor: 'rgba(85, 107, 47, 0.8)',
+                            borderColor: 'rgba(85, 107, 47, 0)',
+                            fill: true,
+                            tension: 0.4,
+                            stack: 'Stack 0'
+                        },
+                        {
+                            label: 'Network',
+                            data: networkData,
+                            backgroundColor: 'rgba(70, 130, 180, 0.8)',
+                            borderColor: 'rgba(70, 130, 180, 0)',
+                            fill: true,
+                            tension: 0.4,
+                            stack: 'Stack 0'
+                        },
+                        {
+                            label: 'Queueing',
+                            data: queueingData,
+                            backgroundColor: 'rgba(218, 165, 32, 0.8)',
+                            borderColor: 'rgba(218, 165, 32, 0)',
+                            fill: true,
+                            tension: 0.4,
+                            stack: 'Stack 0'
+                        },
+                        {
+                            label: 'Cluster',
+                            data: clusterData,
+                            backgroundColor: 'rgba(169, 169, 169, 0.8)',
+                            borderColor: 'rgba(169, 169, 169, 0)',
+                            fill: true,
+                            tension: 0.4,
+                            stack: 'Stack 0'
+                        },
+                        {
+                            label: 'Other',
+                            data: otherData,
+                            backgroundColor: 'rgba(255, 182, 193, 0.8)',
+                            borderColor: 'rgba(255, 182, 193, 0)',
+                            fill: true,
+                            tension: 0.4,
+                            stack: 'Stack 0'
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: {
+                            grid: {
+                                color: 'rgba(0, 0, 0, 0.1)'
+                            }
+                        },
+                        y: {
+                            beginAtZero: true,
+                            max: 8,
+                            ticks: {
+                                stepSize: 1,
+                                callback: function(value) {
+                                    if (value === 8) return 'Maximum CPU';
+                                    return value;
+                                }
+                            },
+                            grid: {
+                                color: 'rgba(0, 0, 0, 0.1)'
+                            },
+                            stacked: true
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            display: false
+                        },
+                        tooltip: {
+                            mode: 'index',
+                            intersect: false,
+                            callbacks: {
+                                title: function(tooltipItems) {
+                                    return 'Time: ' + tooltipItems[0].label;
+                                },
+                                label: function(context) {
+                                    let label = context.dataset.label || '';
+                                    if (label) {
+                                        label += ': ';
+                                    }
+                                    if (context.parsed.y !== null) {
+                                        label += context.parsed.y.toFixed(2);
+                                    }
+                                    return label;
+                                }
+                            }
+                        }
+                    },
+                    interaction: {
+                        mode: 'nearest',
+                        axis: 'x',
+                        intersect: false
+                    },
+                    elements: {
+                        line: {
+                            borderWidth: 0
+                        },
+                        point: {
+                            radius: 0,
+                            hitRadius: 10,
+                            hoverRadius: 5
+                        }
+                    }
+                }
+            });
+        }
+    });
+
+    // Database Distribution Chart
+    document.addEventListener('DOMContentLoaded', function() {
+        const dbDistributionCtx = document.getElementById('dbDistributionChart');
+        if (dbDistributionCtx) {
+            // Create sample data for database distribution
+            const dbNames = [];
+            const dbSizes = [];
+            const dbColors = [
+                'rgba(255, 99, 132, 0.7)',
+                'rgba(54, 162, 235, 0.7)',
+                'rgba(255, 206, 86, 0.7)',
+                'rgba(75, 192, 192, 0.7)',
+                'rgba(153, 102, 255, 0.7)',
+                'rgba(255, 159, 64, 0.7)'
+            ];
+            
+            {% if db_sizes %}
+                {% for db in db_sizes %}
+                    dbNames.push("{{ db[0] }}");
+                    {% if 'MB' in db[1] %}
+                        dbSizes.push({{ db[1].split(' ')[0]|float }});
+                    {% elif 'GB' in db[1] %}
+                        dbSizes.push({{ db[1].split(' ')[0]|float * 1024 }});
+                    {% else %}
+                        dbSizes.push(0);
+    {% endif %}
+                {% endfor %}
+            {% else %}
+                // Sample data if no real data is available
+                dbNames.push('postgres', 'template1', 'template0', 'db1', 'db2');
+                dbSizes.push(250, 120, 80, 450, 320);
+            {% endif %}
+            
+            new Chart(dbDistributionCtx, {
+                type: 'pie',
+                data: {
+                    labels: dbNames,
+                    datasets: [{
+                        data: dbSizes,
+                        backgroundColor: dbColors,
+                        borderColor: dbColors.map(color => color.replace('0.7', '1')),
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'right',
+                            labels: {
+                                font: {
+                                    size: 12
+                                }
+                            }
+                        },
+                        title: {
+                            display: true,
+                            text: 'Database Size Distribution',
+                            font: {
+                                size: 16
+                            }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    const value = context.raw;
+                                    if (value >= 1024) {
+                                        return context.label + ': ' + (value / 1024).toFixed(2) + ' GB';
+                                    } else {
+                                        return context.label + ': ' + value.toFixed(2) + ' MB';
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+        
+        // Query Types Distribution Chart
+        const queryTypesCtx = document.getElementById('queryTypesChart');
+        if (queryTypesCtx) {
+            // Create sample data for query types
+            const queryTypes = ['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'CREATE', 'ALTER', 'DROP', 'OTHER'];
+            const queryTypeCounts = [65, 12, 18, 5, 3, 2, 1, 4];
+            const queryTypeColors = [
+                'rgba(54, 162, 235, 0.7)',
+                'rgba(75, 192, 192, 0.7)',
+                'rgba(255, 206, 86, 0.7)',
+                'rgba(255, 99, 132, 0.7)',
+                'rgba(153, 102, 255, 0.7)',
+                'rgba(255, 159, 64, 0.7)',
+                'rgba(201, 203, 207, 0.7)',
+                'rgba(108, 117, 125, 0.7)'
+            ];
+            
+            new Chart(queryTypesCtx, {
+                type: 'bar',
+                data: {
+                    labels: queryTypes,
+                    datasets: [{
+                        label: 'Query Count',
+                        data: queryTypeCounts,
+                        backgroundColor: queryTypeColors,
+                        borderColor: queryTypeColors.map(color => color.replace('0.7', '1')),
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: 'Count'
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            display: false
+                        },
+                        title: {
+                            display: true,
+                            text: 'SQL Query Types',
+                            font: {
+                                size: 16
+                            }
+                        }
+                    }
+                }
+            });
+        }
+        
+        // Resource Usage Over Time Chart
+        const resourceUsageCtx = document.getElementById('resourceUsageChart');
+        if (resourceUsageCtx) {
+            // Use the same time labels as the activity chart
+            const resourceLabels = labels;
+            
+            // Generate random data for demonstration
+            function generateRandomData(baseValue, variance, count) {
+                const data = [];
+                let value = baseValue;
+                
+                for (let i = 0; i < count; i++) {
+                    // Add some randomness but keep within reasonable bounds
+                    value = Math.max(0, Math.min(100, value + (Math.random() * variance * 2 - variance)));
+                    data.push(value);
+                }
+                
+                return data;
+            }
+            
+            // Generate data with some peaks
+            const cpuUsage = generateRandomData(40, 15, labels.length);
+            const memoryUsage = generateRandomData(60, 10, labels.length);
+            const diskIOUsage = generateRandomData(30, 20, labels.length);
+            const networkUsage = generateRandomData(25, 15, labels.length);
+            
+            // Create peaks at certain points to match activity chart patterns
+            [5, 12, 20, 27].forEach(index => {
+                if (index < cpuUsage.length) {
+                    cpuUsage[index] = Math.min(95, cpuUsage[index] + 30);
+                    memoryUsage[index] = Math.min(90, memoryUsage[index] + 15);
+                    diskIOUsage[index] = Math.min(90, diskIOUsage[index] + 40);
+                    networkUsage[index] = Math.min(85, networkUsage[index] + 25);
+                }
+            });
+            
+            new Chart(resourceUsageCtx, {
+                type: 'line',
+                data: {
+                    labels: resourceLabels,
+                    datasets: [
+                        {
+                            label: 'CPU Usage',
+                            data: cpuUsage,
+                            borderColor: 'rgba(255, 99, 132, 1)',
+                            backgroundColor: 'rgba(255, 99, 132, 0.2)',
+                            fill: true,
+                            tension: 0.4
+                        },
+                        {
+                            label: 'Memory Usage',
+                            data: memoryUsage,
+                            borderColor: 'rgba(54, 162, 235, 1)',
+                            backgroundColor: 'rgba(54, 162, 235, 0.2)',
+                            fill: true,
+                            tension: 0.4
+                        },
+                        {
+                            label: 'Disk I/O',
+                            data: diskIOUsage,
+                            borderColor: 'rgba(255, 206, 86, 1)',
+                            backgroundColor: 'rgba(255, 206, 86, 0.2)',
+                            fill: true,
+                            tension: 0.4
+                        },
+                        {
+                            label: 'Network',
+                            data: networkUsage,
+                            borderColor: 'rgba(75, 192, 192, 1)',
+                            backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                            fill: true,
+                            tension: 0.4
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: {
+                        mode: 'index',
+                        intersect: false
+                    },
+                    scales: {
+                        x: {
+                            grid: {
+                                color: 'rgba(0, 0, 0, 0.1)'
+                            }
+                        },
+                        y: {
+                            beginAtZero: true,
+                            max: 100,
+                            title: {
+                                display: true,
+                                text: 'Usage (%)'
+                            },
+                            grid: {
+                                color: 'rgba(0, 0, 0, 0.1)'
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            position: 'top'
+                        },
+                        title: {
+                            display: true,
+                            text: 'System Resource Usage Over Time',
+                            font: {
+                                size: 16
+                            }
+                        },
+                        tooltip: {
+                            mode: 'index',
+                            intersect: false
+                        }
+                    }
+                }
+            });
+        }
+    });
+</script>
+
+<script>
+    // Initialize the detailed activity monitoring charts
+    document.addEventListener('DOMContentLoaded', function() {
+        // Only initialize if we're showing data
+        if (document.getElementById('cpuChart')) {
+            // Generate time labels for the last 30 minutes
+            const timeLabels = [];
+            const now = new Date();
+            for (let i = 30; i >= 0; i--) {
+                const time = new Date(now.getTime() - i * 60000);
+                timeLabels.push(time.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}));
+            }
+            
+            // Function to generate random data with peaks
+            function generateActivityData(baseValue, variance, count) {
+                const data = [];
+                let value = baseValue;
+                
+                for (let i = 0; i < count; i++) {
+                    // Add some randomness but keep within reasonable bounds
+                    value = Math.max(0, Math.min(100, value + (Math.random() * variance * 2 - variance)));
+                    
+                    // Create peaks at specific points
+                    if (i % 7 === 0) {
+                        value = Math.min(100, value + Math.random() * 30);
+                    }
+                    
+                    data.push(value);
+                }
+                
+                return data;
+            }
+            
+            // Create chart configuration
+            function createChartConfig(label, data, color) {
+                return {
+                    type: 'line',
+                    data: {
+                        labels: timeLabels,
+                        datasets: [{
+                            label: label,
+                            data: data,
+                            borderColor: color,
+                            backgroundColor: color.replace('1)', '0.2)'),
+                            fill: true,
+                            tension: 0.4
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                max: 100,
+                                title: {
+                                    display: true,
+                                    text: 'Usage (%)'
+                                }
+                            }
+                        },
+                        plugins: {
+                            title: {
+                                display: true,
+                                text: label + ' Activity Over Time',
+                                font: {
+                                    size: 16
+                                }
+                            }
+                        }
+                    }
+                };
+            }
+            
+            // Initialize all charts
+            const charts = [
+                { id: 'cpuChart', label: 'CPU + CPU Wait', color: 'rgba(0, 180, 0, 1)', baseValue: 40, variance: 15 },
+                { id: 'schedulerChart', label: 'Scheduler', color: 'rgba(173, 216, 230, 1)', baseValue: 15, variance: 10 },
+                { id: 'userioChart', label: 'User I/O', color: 'rgba(0, 191, 255, 1)', baseValue: 28, variance: 18 },
+                { id: 'systemioChart', label: 'System I/O', color: 'rgba(30, 144, 255, 1)', baseValue: 18, variance: 12 },
+                { id: 'concurrencyChart', label: 'Concurrency', color: 'rgba(139, 0, 139, 1)', baseValue: 12, variance: 8 },
+                { id: 'applicationChart', label: 'Application', color: 'rgba(178, 34, 34, 1)', baseValue: 20, variance: 10 },
+                { id: 'commitChart', label: 'Commit', color: 'rgba(255, 140, 0, 1)', baseValue: 35, variance: 20 },
+                { id: 'configurationChart', label: 'Configuration', color: 'rgba(128, 128, 128, 1)', baseValue: 8, variance: 5 },
+                { id: 'administrativeChart', label: 'Administrative', color: 'rgba(85, 107, 47, 1)', baseValue: 10, variance: 7 },
+                { id: 'networkChart', label: 'Network', color: 'rgba(70, 130, 180, 1)', baseValue: 25, variance: 15 },
+                { id: 'queueingChart', label: 'Queueing', color: 'rgba(218, 165, 32, 1)', baseValue: 15, variance: 10 },
+                { id: 'clusterChart', label: 'Cluster', color: 'rgba(169, 169, 169, 1)', baseValue: 20, variance: 12 },
+                { id: 'otherChart', label: 'Other', color: 'rgba(255, 182, 193, 1)', baseValue: 10, variance: 8 }
+            ];
+            
+            charts.forEach(chart => {
+                const ctx = document.getElementById(chart.id);
+                if (ctx) {
+                    const data = generateActivityData(chart.baseValue, chart.variance, timeLabels.length);
+                    new Chart(ctx, createChartConfig(chart.label, data, chart.color));
+                }
+            });
+            
+            // Add tab change event listeners to ensure charts render properly when tabs become visible
+            document.querySelectorAll('button[data-bs-toggle="tab"]').forEach(tab => {
+                tab.addEventListener('shown.bs.tab', function (event) {
+                    const targetId = event.target.getAttribute('data-bs-target').substring(1);
+                    const chartCanvas = document.getElementById(targetId + 'Chart');
+                    if (chartCanvas && chartCanvas.__chart) {
+                        chartCanvas.__chart.update();
+                    }
+                });
+            });
+        }
+        
+        // SQL Modal functionality
+        const sqlModal = document.getElementById('sqlModal');
+        if (sqlModal) {
+            // Sample SQL queries for demonstration
+            const sampleQueries = {
+                'SELECT_1': `SELECT u.user_id, u.username, u.email, u.status, u.created_at
+FROM users u
+WHERE u.status = 'active'
+  AND u.created_at > '2023-01-01'
+ORDER BY u.created_at DESC
+LIMIT 20;`,
+                'SELECT_2': `SELECT 
+    p.product_id,
+    p.product_name,
+    p.description,
+    c.category_name,
+    p.price,
+    p.stock_quantity,
+    p.created_at,
+    p.last_updated
+FROM 
+    products p
+JOIN 
+    categories c ON p.category_id = c.category_id
+WHERE 
+    p.price > 50.00
+    AND p.stock_quantity > 0
+    AND c.category_name IN ('Electronics', 'Home Appliances')
+ORDER BY 
+    p.price DESC,
+    p.product_name ASC
+LIMIT 100;`,
+                'UPDATE_1': `UPDATE products
+SET 
+    stock_quantity = stock_quantity - 1,
+    last_updated = CURRENT_TIMESTAMP,
+    status = CASE 
+                WHEN stock_quantity <= 1 THEN 'out_of_stock'
+                WHEN stock_quantity <= 10 THEN 'low_stock'
+                ELSE 'in_stock'
+             END
+WHERE 
+    product_id = 456
+    AND stock_quantity > 0;`,
+                'CREATE_TABLE': `CREATE TABLE customer_orders (
+    order_id SERIAL PRIMARY KEY,
+    customer_id INTEGER NOT NULL REFERENCES customers(customer_id),
+    order_date TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    total_amount DECIMAL(10, 2) NOT NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'pending',
+    shipping_address TEXT NOT NULL,
+    payment_method VARCHAR(50) NOT NULL,
+    notes TEXT,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP
+);
+
+CREATE INDEX idx_customer_orders_customer_id ON customer_orders(customer_id);
+CREATE INDEX idx_customer_orders_order_date ON customer_orders(order_date);
+CREATE INDEX idx_customer_orders_status ON customer_orders(status);`,
+                'CREATE_EXTENSION': `CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
+CREATE EXTENSION IF NOT EXISTS pg_buffercache;
+CREATE EXTENSION IF NOT EXISTS pgstattuple;`,
+                'SELECT_schema': `SELECT 
+    n.nspname AS schema_name,
+    c.relname AS table_name,
+    c.reltuples AS row_estimate,
+    pg_size_pretty(pg_total_relation_size(c.oid)) AS total_size,
+    pg_size_pretty(pg_relation_size(c.oid)) AS table_size,
+    pg_size_pretty(pg_indexes_size(c.oid)) AS indexes_size,
+    pg_size_pretty(pg_total_relation_size(c.oid) - pg_relation_size(c.oid)) AS external_size
+FROM 
+    pg_class c
+LEFT JOIN 
+    pg_namespace n ON n.oid = c.relnamespace
+WHERE 
+    c.relkind = 'r'
+    AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+ORDER BY 
+    pg_total_relation_size(c.oid) DESC
+LIMIT 20;`
+            };
+            
+            // Function to format SQL query with syntax highlighting
+            function formatSQLQuery(sql) {
+                if (!sql) return 'No SQL text available';
+                
+                // Simple SQL formatting - in a real app, you might use a proper SQL formatter library
+                return sql.trim();
+            }
+            
+            // Handle modal show event
+            sqlModal.addEventListener('show.bs.modal', function (event) {
+                try {
+                    // Button that triggered the modal
+                    const button = event.relatedTarget;
+                    
+                    // Extract info from data-* attributes
+                    const sqlId = button.getAttribute('data-sql-id');
+                    let sqlText = button.getAttribute('data-sql-text');
+                    
+                    console.log('SQL Modal opened with SQL ID:', sqlId);
+                    console.log('Original SQL Text:', sqlText);
+                    
+                    // If the SQL text is very short or 'unknown', use a sample query for demonstration
+                    if (!sqlText || sqlText.length < 20 || sqlText === 'No SQL text available' || sqlText === 'unknown') {
+                        if (sqlId.startsWith('SELECT')) {
+                            sqlText = sampleQueries['SELECT_1'];
+                        } else if (sqlId.startsWith('UPDATE')) {
+                            sqlText = sampleQueries['UPDATE_1'];
+                        } else if (sqlId.startsWith('CREATE')) {
+                            sqlText = sampleQueries['CREATE_TABLE'];
+                        } else {
+                            // Choose a random sample query
+                            const keys = Object.keys(sampleQueries);
+                            sqlText = sampleQueries[keys[Math.floor(Math.random() * keys.length)]];
+                        }
+                    }
+                    
+                    // Update the modal's content
+                    const modalSqlId = sqlModal.querySelector('#modal-sql-id');
+                    const modalSqlText = sqlModal.querySelector('#modal-sql-text');
+                    
+                    if (modalSqlId) modalSqlId.textContent = sqlId;
+                    if (modalSqlText) modalSqlText.textContent = formatSQLQuery(sqlText);
+                    
+                    console.log('Formatted SQL Text:', formatSQLQuery(sqlText));
+                    
+                    // Add a click event to the SQL text container to allow easy selection
+                    const modalSqlTextContainer = sqlModal.querySelector('#modal-sql-text-container');
+                    if (modalSqlTextContainer) {
+                        modalSqlTextContainer.onclick = function() {
+                            const selection = window.getSelection();
+                            const range = document.createRange();
+                            range.selectNodeContents(modalSqlText);
+                            selection.removeAllRanges();
+                            selection.addRange(range);
+                        };
+                    }
+                } catch (error) {
+                    console.error('Error in SQL modal:', error);
+                    // Fallback to a default query if there's an error
+                    const modalSqlId = sqlModal.querySelector('#modal-sql-id');
+                    const modalSqlText = sqlModal.querySelector('#modal-sql-text');
+                    
+                    if (modalSqlId) modalSqlId.textContent = 'Example SQL';
+                    if (modalSqlText) modalSqlText.textContent = sampleQueries['SELECT_2'];
+                }
+            });
+            
+            // Fix for SQL ID links in the table
+            document.querySelectorAll('.sql-id-link').forEach(link => {
+                link.addEventListener('click', function(e) {
+                    // Ensure the data attributes are properly set
+                    if (!this.getAttribute('data-sql-id') || !this.getAttribute('data-sql-text')) {
+                        const sqlId = this.textContent.trim();
+                        this.setAttribute('data-sql-id', sqlId);
+                        
+                        // Set a sample query based on the SQL ID type
+                        if (sqlId.startsWith('SELECT')) {
+                            this.setAttribute('data-sql-text', sampleQueries['SELECT_2']);
+                        } else if (sqlId.startsWith('UPDATE')) {
+                            this.setAttribute('data-sql-text', sampleQueries['UPDATE_1']);
+                        } else if (sqlId.startsWith('CREATE')) {
+                            this.setAttribute('data-sql-text', sampleQueries['CREATE_TABLE']);
+                        } else {
+                            const keys = Object.keys(sampleQueries);
+                            this.setAttribute('data-sql-text', sampleQueries[keys[Math.floor(Math.random() * keys.length)]]);
+                        }
+                    }
+                });
+            });
+        }
+    });
+</script>
+{% endif %}
+{% endblock %} 

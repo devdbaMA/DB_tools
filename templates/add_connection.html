@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h3>Add Database Connection</h3>
+                    <a href="{{ url_for('list_connections') }}" class="btn btn-secondary">
+                        <i class="bi bi-arrow-left"></i> Back to Connections
+                    </a>
+                </div>
+                <div class="card-body">
+                    {% with messages = get_flashed_messages(with_categories=true) %}
+                        {% if messages %}
+                            {% for category, message in messages %}
+                                <div class="alert alert-{{ category }}">{{ message }}</div>
+                            {% endfor %}
+                        {% endif %}
+                    {% endwith %}
+                    
+                    <form method="POST">
+                        {{ form.csrf_token }}
+                        
+                        <div class="mb-3">
+                            {{ form.name.label(class="form-label") }}
+                            {{ form.name(class="form-control") }}
+                            {% if form.name.errors %}
+                                {% for error in form.name.errors %}
+                                    <span class="text-danger">{{ error }}</span>
+                                {% endfor %}
+                            {% endif %}
+                        </div>
+                        
+                        <div class="mb-3">
+                            {{ form.host.label(class="form-label") }}
+                            {{ form.host(class="form-control") }}
+                            {% if form.host.errors %}
+                                {% for error in form.host.errors %}
+                                    <span class="text-danger">{{ error }}</span>
+                                {% endfor %}
+                            {% endif %}
+                        </div>
+                        
+                        <div class="mb-3">
+                            {{ form.database.label(class="form-label") }}
+                            {{ form.database(class="form-control") }}
+                            {% if form.database.errors %}
+                                {% for error in form.database.errors %}
+                                    <span class="text-danger">{{ error }}</span>
+                                {% endfor %}
+                            {% endif %}
+                        </div>
+                        
+                        <div class="mb-3">
+                            {{ form.user_name.label(class="form-label") }}
+                            {{ form.user_name(class="form-control") }}
+                            {% if form.user_name.errors %}
+                                {% for error in form.user_name.errors %}
+                                    <span class="text-danger">{{ error }}</span>
+                                {% endfor %}
+                            {% endif %}
+                        </div>
+                        
+                        <div class="mb-3">
+                            {{ form.password.label(class="form-label") }}
+                            {{ form.password(class="form-control") }}
+                            {% if form.password.errors %}
+                                {% for error in form.password.errors %}
+                                    <span class="text-danger">{{ error }}</span>
+                                {% endfor %}
+                            {% endif %}
+                        </div>
+                        
+                        <div class="d-flex gap-2">
+                            {{ form.test_connection(class="btn btn-info") }}
+                            {{ form.save(class="btn btn-primary") }}
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 

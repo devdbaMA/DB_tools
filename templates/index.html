@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row">
+        <div class="col-12">
+            <h2>Welcome, {{ username }}!</h2>
+            
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for category, message in messages %}
+                        <div class="alert alert-{{ category }} alert-dismissible fade show">
+                            {{ message }}
+                            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                        </div>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
+            
+            <div class="card mt-4">
+                <div class="card-header bg-primary text-white">
+                    <h4 class="mb-0">Database Management</h4>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <h5>Available Databases</h5>
+                            <ul class="list-group">
+                                {% for db in databases %}
+                                    <li class="list-group-item">{{ db }}</li>
+                                {% endfor %}
+                            </ul>
+                        </div>
+                        <div class="col-md-6">
+                            <h5>Quick Actions</h5>
+                            <div class="d-grid gap-2">
+                                <a href="{{ url_for('backup_restore') }}" class="btn btn-primary">Backup & Restore</a>
+                                <a href="#" class="btn btn-secondary">Database Status</a>
+                                <a href="#" class="btn btn-info">Performance Metrics</a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 

@@ -1,0 +1,882 @@
+{% extends "base.html" %}
+
+{% block title %}Database Monitoring - PostgreSQL Tool{% endblock %}
+
+{% block head %}
+{{ super() }}
+<!-- Add Chart.js library -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
+<style>
+    .chart-container {
+        position: relative;
+        height: 250px;
+        background-color: #f8f9fa;
+        border: 1px solid #ddd;
+    }
+    .refresh-indicator {
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        font-size: 12px;
+        color: #6c757d;
+    }
+    .auto-refresh-active {
+        background-color: #198754;
+        color: white;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2 class="mb-0">Database Monitoring</h2>
+        <div class="d-flex align-items-center">
+            <span class="me-2">Auto-refresh:</span>
+            <button class="btn btn-sm btn-outline-secondary me-2" id="manual-refresh">Manual Refresh</button>
+            <button class="btn btn-sm btn-primary" id="auto-refresh">
+                <i class="bi bi-arrow-clockwise"></i>
+            </button>
+            <span class="ms-2 refresh-indicator" id="refresh-countdown"></span>
+        </div>
+    </div>
+
+    {% include 'connection_selector.html' %}
+
+    {% if show_data %}
+    <!-- Dashboard Overview -->
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card bg-primary text-white">
+                <div class="card-body">
+                    <h5 class="card-title">Active Connections</h5>
+                    <h2 class="display-4">{{ connections|length }}</h2>
+                    <p class="card-text">Current active database connections</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-success text-white">
+                <div class="card-body">
+                    <h5 class="card-title">Databases</h5>
+                    <h2 class="display-4">{{ db_sizes|length }}</h2>
+                    <p class="card-text">Total databases on server</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-info text-white">
+                <div class="card-body">
+                    <h5 class="card-title">Tables</h5>
+                    <h2 class="display-4">{{ table_stats|length }}</h2>
+                    <p class="card-text">Top tables by size</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-warning text-white">
+                <div class="card-body">
+                    <h5 class="card-title">Total Size</h5>
+                    <h2 class="display-4">
+                        {% set total_size = 0 %}
+                        {% for db in db_sizes %}
+                            {% set size_str = db[1] %}
+                            {% if 'MB' in size_str %}
+                                {% set size_val = size_str.split(' ')[0]|float %}
+                                {% set total_size = total_size + size_val %}
+                            {% elif 'GB' in size_str %}
+                                {% set size_val = size_str.split(' ')[0]|float * 1024 %}
+                                {% set total_size = total_size + size_val %}
+                            {% endif %}
+                        {% endfor %}
+                        {% if total_size > 1024 %}
+                            {{ '{:.2f}'.format(total_size / 1024) }} GB
+                        {% else %}
+                            {{ '{:.2f}'.format(total_size) }} MB
+                        {% endif %}
+                    </h2>
+                    <p class="card-text">Total database storage used</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- System Resource Usage Chart -->
+    <div class="row mb-4">
+        <div class="col-md-12">
+            <div class="card">
+                <div class="card-header bg-dark text-white">
+                    <h5 class="card-title mb-0">System Resource Usage Over Time</h5>
+                </div>
+                <div class="card-body p-0">
+                    <div class="chart-container">
+                        <canvas id="resourceChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Users Section -->
+    <div class="row mb-4">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="card-title mb-0">Users & Connections (Table)</h5>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                        <table class="table table-striped table-hover">
+                            <thead class="table-dark">
+                        <tr>
+                                    <th>Username</th>
+                            <th>Database</th>
+                            <th>Client Address</th>
+                            <th>Connected Since</th>
+                            <th>State</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for conn in connections %}
+                        <tr>
+                                    <td>{{ conn[1] }}</td>
+                            <td>{{ conn[0] }}</td>
+                            <td>{{ conn[2] or 'local' }}</td>
+                            <td>{{ conn[3].strftime('%Y-%m-%d %H:%M:%S') if conn[3] else 'N/A' }}</td>
+                            <td>
+                                <span class="badge {% if conn[4] == 'active' %}bg-success{% else %}bg-secondary{% endif %}">
+                                    {{ conn[4] or 'idle' }}
+                                </span>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="card-title mb-0">Users & Connections (Chart)</h5>
+                </div>
+                <div class="card-body">
+                    <canvas id="usersChart" height="250"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Database Statistics Section -->
+    <div class="row mb-4">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header bg-success text-white">
+                    <h5 class="card-title mb-0">Database Statistics (Table)</h5>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-striped table-hover">
+                            <thead class="table-dark">
+                                <tr>
+                                    <th>Database</th>
+                                    <th>Size</th>
+                                    <th>Active Connections</th>
+                                    <th>Tables</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for db in db_sizes %}
+                                <tr>
+                                    <td>{{ db[0] }}</td>
+                                    <td>{{ db[1] }}</td>
+                                    <td>
+                                        {% set conn_count = 0 %}
+                                        {% for conn in connections %}
+                                            {% if conn[0] == db[0] %}
+                                                {% set conn_count = conn_count + 1 %}
+                                            {% endif %}
+                                        {% endfor %}
+                                        {{ conn_count }}
+                                    </td>
+                                    <td>
+                                        {% set table_count = 0 %}
+                                        {% for stat in table_stats %}
+                                            {% if stat[0] == db[0] %}
+                                                {% set table_count = table_count + 1 %}
+                                            {% endif %}
+                                        {% endfor %}
+                                        {{ table_count }}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header bg-success text-white">
+                    <h5 class="card-title mb-0">Database Statistics (Chart)</h5>
+                </div>
+                <div class="card-body">
+                    <canvas id="dbSizeChart" height="250"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Network & CPU Loading Section -->
+    <div class="row mb-4">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header bg-info text-white">
+                    <h5 class="card-title mb-0">Network & CPU Loading (Table)</h5>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-striped table-hover">
+                            <thead class="table-dark">
+                                <tr>
+                                    <th>Metric</th>
+                                    <th>Value</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>CPU Usage</td>
+                                    <td>{{ cpu_usage|default('45%') }}</td>
+                                    <td>
+                                        {% set cpu = cpu_usage|default('45%')|replace('%', '')|int %}
+                                        <div class="progress">
+                                            <div class="progress-bar {% if cpu < 50 %}bg-success{% elif cpu < 80 %}bg-warning{% else %}bg-danger{% endif %}" 
+                                                 role="progressbar" 
+                                                 style="width: {{ cpu }}%;" 
+                                                 aria-valuenow="{{ cpu }}" 
+                                                 aria-valuemin="0" 
+                                                 aria-valuemax="100">{{ cpu }}%</div>
+                                        </div>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td>Memory Usage</td>
+                                    <td>{{ memory_usage|default('62%') }}</td>
+                                    <td>
+                                        {% set memory = memory_usage|default('62%')|replace('%', '')|int %}
+                                        <div class="progress">
+                                            <div class="progress-bar {% if memory < 50 %}bg-success{% elif memory < 80 %}bg-warning{% else %}bg-danger{% endif %}" 
+                                                 role="progressbar" 
+                                                 style="width: {{ memory }}%;" 
+                                                 aria-valuenow="{{ memory }}" 
+                                                 aria-valuemin="0" 
+                                                 aria-valuemax="100">{{ memory }}%</div>
+                                        </div>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td>Network In</td>
+                                    <td>{{ network_in|default('2.4 MB/s') }}</td>
+                                    <td>
+                                        {% set net_in = 60 %}
+                                        <div class="progress">
+                                            <div class="progress-bar bg-info" 
+                                                 role="progressbar" 
+                                                 style="width: {{ net_in }}%;" 
+                                                 aria-valuenow="{{ net_in }}" 
+                                                 aria-valuemin="0" 
+                                                 aria-valuemax="100">{{ net_in }}%</div>
+                                        </div>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td>Network Out</td>
+                                    <td>{{ network_out|default('1.8 MB/s') }}</td>
+                                    <td>
+                                        {% set net_out = 45 %}
+                                        <div class="progress">
+                                            <div class="progress-bar bg-info" 
+                                                 role="progressbar" 
+                                                 style="width: {{ net_out }}%;" 
+                                                 aria-valuenow="{{ net_out }}" 
+                                                 aria-valuemin="0" 
+                                                 aria-valuemax="100">{{ net_out }}%</div>
+                                        </div>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td>Disk I/O</td>
+                                    <td>{{ disk_io|default('35 MB/s') }}</td>
+                                    <td>
+                                        {% set disk = 35 %}
+                                        <div class="progress">
+                                            <div class="progress-bar bg-success" 
+                                                 role="progressbar" 
+                                                 style="width: {{ disk }}%;" 
+                                                 aria-valuenow="{{ disk }}" 
+                                                 aria-valuemin="0" 
+                                                 aria-valuemax="100">{{ disk }}%</div>
+                                        </div>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header bg-info text-white">
+                    <h5 class="card-title mb-0">Network & CPU Loading (Chart)</h5>
+                </div>
+                <div class="card-body">
+                    <canvas id="resourcesChart" height="250"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    <!-- Concerning SQL & TOP SQL Section -->
+    <div class="row mb-4">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header bg-warning text-white">
+                    <h5 class="card-title mb-0">Concerning SQL Queries (Table)</h5>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-striped table-hover">
+                            <thead class="table-dark">
+                                <tr>
+                                    <th>Query ID</th>
+                                    <th>Database</th>
+                                    <th>User</th>
+                                    <th>Duration</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>Q-1001</td>
+                                    <td>db1</td>
+                                    <td>postgres</td>
+                                    <td>12.5s</td>
+                                    <td><span class="badge bg-danger">Slow Query</span></td>
+                                </tr>
+                                <tr>
+                                    <td>Q-1002</td>
+                                    <td>postgres</td>
+                                    <td>postgres</td>
+                                    <td>8.2s</td>
+                                    <td><span class="badge bg-warning">High CPU</span></td>
+                                </tr>
+                                <tr>
+                                    <td>Q-1003</td>
+                                    <td>db1</td>
+                                    <td>postgres</td>
+                                    <td>5.7s</td>
+                                    <td><span class="badge bg-warning">High I/O</span></td>
+                                </tr>
+                                <tr>
+                                    <td>Q-1004</td>
+                                    <td>postgres</td>
+                                    <td>postgres</td>
+                                    <td>3.1s</td>
+                                    <td><span class="badge bg-info">Monitoring</span></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header bg-warning text-white">
+                    <h5 class="card-title mb-0">TOP SQL by CPU Usage (Chart)</h5>
+                </div>
+                <div class="card-body">
+                    <canvas id="topSqlChart" height="250"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Table Statistics -->
+    <div class="row mb-4">
+        <div class="col-md-12">
+            <div class="card">
+                <div class="card-header bg-dark text-white">
+                    <h5 class="card-title mb-0">Top Tables by Size</h5>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-striped">
+                            <thead>
+                                <tr>
+                                    <th>Schema</th>
+                                    <th>Table</th>
+                                    <th>Live Rows</th>
+                                    <th>Dead Rows</th>
+                                    <th>Total Size</th>
+                                    <th>Efficiency</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for stat in table_stats %}
+                                <tr>
+                                    <td>{{ stat[0] }}</td>
+                                    <td>{{ stat[1] }}</td>
+                                    <td>{{ '{:,}'.format(stat[2]) }}</td>
+                                    <td>{{ '{:,}'.format(stat[3]) }}</td>
+                                    <td>{{ stat[4] }}</td>
+                                    <td>
+                                        {% if stat[2] + stat[3] > 0 %}
+                                            {% set efficiency = (stat[2] / (stat[2] + stat[3]) * 100)|round %}
+                                            <div class="progress">
+                                                <div class="progress-bar {% if efficiency > 90 %}bg-success{% elif efficiency > 70 %}bg-warning{% else %}bg-danger{% endif %}" 
+                                                     role="progressbar" 
+                                                     style="width: {{ efficiency }}%;" 
+                                                     aria-valuenow="{{ efficiency }}" 
+                                                     aria-valuemin="0" 
+                                                     aria-valuemax="100">{{ efficiency }}%</div>
+                                            </div>
+                                        {% else %}
+                                            <div class="progress">
+                                                <div class="progress-bar bg-secondary" role="progressbar" style="width: 100%;">N/A</div>
+                                            </div>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% else %}
+    <div class="alert alert-info">
+        Please select a database connection and test it to view monitoring data.
+    </div>
+    {% endif %}
+</div>
+
+<!-- Refresh Button -->
+<div class="position-fixed bottom-0 end-0 p-3">
+    <button onclick="location.reload()" class="btn btn-primary rounded-circle" style="width: 50px; height: 50px;">
+        <i class="bi bi-arrow-clockwise"></i>
+    </button>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<!-- Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<script>
+    {% if show_data %}
+    document.addEventListener('DOMContentLoaded', function() {
+        // Auto-refresh functionality
+        const autoRefreshBtn = document.getElementById('auto-refresh');
+        const manualRefreshBtn = document.getElementById('manual-refresh');
+        const refreshCountdown = document.getElementById('refresh-countdown');
+        let refreshInterval;
+        let countdownInterval;
+        let secondsLeft = 60; // 1 minute refresh interval
+        
+        // Start auto-refresh by default
+        startAutoRefresh();
+        
+        function startAutoRefresh() {
+            autoRefreshBtn.classList.add('auto-refresh-active');
+            autoRefreshBtn.innerHTML = '<i class="bi bi-pause"></i>';
+            
+            // Clear any existing intervals
+            if (refreshInterval) clearInterval(refreshInterval);
+            if (countdownInterval) clearInterval(countdownInterval);
+            
+            // Set new intervals
+            refreshInterval = setInterval(function() {
+                location.reload();
+            }, secondsLeft * 1000);
+            
+            // Update countdown display
+            secondsLeft = 60;
+            updateCountdown();
+            countdownInterval = setInterval(updateCountdown, 1000);
+        }
+        
+        function stopAutoRefresh() {
+            autoRefreshBtn.classList.remove('auto-refresh-active');
+            autoRefreshBtn.innerHTML = '<i class="bi bi-arrow-clockwise"></i>';
+            
+            if (refreshInterval) clearInterval(refreshInterval);
+            if (countdownInterval) clearInterval(countdownInterval);
+            
+            refreshCountdown.textContent = '';
+        }
+        
+        function updateCountdown() {
+            secondsLeft--;
+            refreshCountdown.textContent = `Refreshing in ${secondsLeft}s`;
+            if (secondsLeft <= 0) {
+                secondsLeft = 60;
+            }
+        }
+        
+        autoRefreshBtn.addEventListener('click', function() {
+            if (this.classList.contains('auto-refresh-active')) {
+                stopAutoRefresh();
+            } else {
+                startAutoRefresh();
+            }
+        });
+        
+        manualRefreshBtn.addEventListener('click', function() {
+            location.reload();
+        });
+        
+        // System Resource Usage Chart
+        const resourceCtx = document.getElementById('resourceChart').getContext('2d');
+        
+        // Generate time labels for the last 30 minutes
+        const timeLabels = [];
+        const now = new Date();
+        for (let i = 30; i >= 0; i--) {
+            const time = new Date(now.getTime() - i * 60000);
+            timeLabels.push(time.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}));
+        }
+        
+        // Generate random data for demonstration
+        function generateRandomData(baseValue, variance, count) {
+            const data = [];
+            let value = baseValue;
+            
+            for (let i = 0; i < count; i++) {
+                // Add some randomness but keep within reasonable bounds
+                value = Math.max(0, Math.min(100, value + (Math.random() * variance * 2 - variance)));
+                data.push(value);
+            }
+            
+            return data;
+        }
+        
+        // Generate data with some peaks
+        const cpuData = generateRandomData(40, 15, 31);
+        const memoryData = generateRandomData(60, 10, 31);
+        const diskIOData = generateRandomData(30, 20, 31);
+        const networkData = generateRandomData(25, 15, 31);
+        
+        // Create peaks at certain points
+        [5, 12, 20, 27].forEach(index => {
+            if (index < cpuData.length) {
+                cpuData[index] = Math.min(95, cpuData[index] + 30);
+                memoryData[index] = Math.min(90, memoryData[index] + 15);
+                diskIOData[index] = Math.min(90, diskIOData[index] + 40);
+                networkData[index] = Math.min(85, networkData[index] + 25);
+            }
+        });
+        
+        const resourceChart = new Chart(resourceCtx, {
+            type: 'line',
+            data: {
+                labels: timeLabels,
+                datasets: [
+                    {
+                        label: 'CPU Usage',
+                        data: cpuData,
+                        borderColor: 'rgba(255, 99, 132, 1)',
+                        backgroundColor: 'rgba(255, 99, 132, 0.2)',
+                        fill: true,
+                        tension: 0.4
+                    },
+                    {
+                        label: 'Memory Usage',
+                        data: memoryData,
+                        borderColor: 'rgba(54, 162, 235, 1)',
+                        backgroundColor: 'rgba(54, 162, 235, 0.2)',
+                        fill: true,
+                        tension: 0.4
+                    },
+                    {
+                        label: 'Disk I/O',
+                        data: diskIOData,
+                        borderColor: 'rgba(255, 206, 86, 1)',
+                        backgroundColor: 'rgba(255, 206, 86, 0.2)',
+                        fill: true,
+                        tension: 0.4
+                    },
+                    {
+                        label: 'Network',
+                        data: networkData,
+                        borderColor: 'rgba(75, 192, 192, 1)',
+                        backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                        fill: true,
+                        tension: 0.4
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        max: 100,
+                        title: {
+                            display: true,
+                            text: 'Usage (%)'
+                        }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        position: 'top'
+                    },
+                    tooltip: {
+                        mode: 'index',
+                        intersect: false
+                    }
+                },
+                interaction: {
+                    mode: 'nearest',
+                    axis: 'x',
+                    intersect: false
+                }
+            }
+        });
+        
+        // Update the existing charts with better data
+        // Users Chart
+        const usersCtx = document.getElementById('usersChart');
+        if (usersCtx) {
+            const usersChart = new Chart(usersCtx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Active', 'Idle', 'Waiting'],
+                    datasets: [{
+                        data: [
+                            {{ connections|selectattr('4', 'defined')|selectattr('4', 'ne', 'idle')|list|length }},
+                            {{ connections|selectattr('4', 'eq', 'idle')|list|length }},
+                            {{ connections|selectattr('4', 'undefined')|list|length }}
+                        ],
+                        backgroundColor: [
+                            'rgba(40, 167, 69, 0.7)',
+                            'rgba(108, 117, 125, 0.7)',
+                            'rgba(0, 123, 255, 0.7)'
+                        ],
+                        borderColor: [
+                            'rgba(40, 167, 69, 1)',
+                            'rgba(108, 117, 125, 1)',
+                            'rgba(0, 123, 255, 1)'
+                        ],
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'right'
+                        },
+                        title: {
+                            display: true,
+                            text: 'Connection Status'
+                        }
+                    }
+                }
+            });
+        }
+        
+        // Database Size Chart
+        const dbSizeCtx = document.getElementById('dbSizeChart');
+        if (dbSizeCtx) {
+            const dbLabels = [];
+            const dbSizes = [];
+            
+            {% for db in db_sizes %}
+                dbLabels.push("{{ db[0] }}");
+                {% if 'MB' in db[1] %}
+                    dbSizes.push({{ db[1].split(' ')[0]|float }});
+                {% elif 'GB' in db[1] %}
+                    dbSizes.push({{ db[1].split(' ')[0]|float * 1024 }});
+                {% else %}
+                    dbSizes.push(0);
+                {% endif %}
+            {% endfor %}
+            
+            const dbSizeChart = new Chart(dbSizeCtx, {
+                type: 'bar',
+                data: {
+                    labels: dbLabels,
+                    datasets: [{
+                        label: 'Size (MB)',
+                        data: dbSizes,
+                        backgroundColor: 'rgba(54, 162, 235, 0.7)',
+                        borderColor: 'rgba(54, 162, 235, 1)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: 'Size (MB)'
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            display: false
+                        },
+                        title: {
+                            display: true,
+                            text: 'Database Sizes'
+                        }
+                    }
+                }
+            });
+        }
+        
+        // Top SQL Chart
+        const topSqlCtx = document.getElementById('topSqlChart');
+        if (topSqlCtx) {
+            const topSqlChart = new Chart(topSqlCtx, {
+                type: 'bar',
+                data: {
+                    labels: ['Query 1', 'Query 2', 'Query 3', 'Query 4', 'Query 5'],
+                    datasets: [{
+                        label: 'CPU Usage (%)',
+                        data: [85, 72, 65, 58, 42],
+                        backgroundColor: [
+                            'rgba(255, 99, 132, 0.7)',
+                            'rgba(255, 159, 64, 0.7)',
+                            'rgba(255, 206, 86, 0.7)',
+                            'rgba(75, 192, 192, 0.7)',
+                            'rgba(54, 162, 235, 0.7)'
+                        ],
+                        borderColor: [
+                            'rgba(255, 99, 132, 1)',
+                            'rgba(255, 159, 64, 1)',
+                            'rgba(255, 206, 86, 1)',
+                            'rgba(75, 192, 192, 1)',
+                            'rgba(54, 162, 235, 1)'
+                        ],
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    indexAxis: 'y',
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: {
+                            beginAtZero: true,
+                            max: 100,
+                            title: {
+                                display: true,
+                                text: 'CPU Usage (%)'
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            display: false
+                        },
+                        title: {
+                            display: true,
+                            text: 'Top SQL Queries by CPU Usage'
+                        }
+                    }
+                }
+            });
+        }
+        
+        // Network & CPU Loading Chart
+        const resourcesCtx = document.getElementById('resourcesChart');
+        if (resourcesCtx) {
+            // Use the same data we generated for the System Resource Usage chart
+            const resourcesChart = new Chart(resourcesCtx, {
+                type: 'line',
+                data: {
+                    labels: timeLabels,
+                    datasets: [
+                        {
+                            label: 'CPU Usage',
+                            data: cpuData,
+                            borderColor: 'rgba(255, 99, 132, 1)',
+                            backgroundColor: 'rgba(255, 99, 132, 0.2)',
+                            fill: true,
+                            tension: 0.4
+                        },
+                        {
+                            label: 'Memory Usage',
+                            data: memoryData,
+                            borderColor: 'rgba(54, 162, 235, 1)',
+                            backgroundColor: 'rgba(54, 162, 235, 0.2)',
+                            fill: true,
+                            tension: 0.4
+                        },
+                        {
+                            label: 'Disk I/O',
+                            data: diskIOData,
+                            borderColor: 'rgba(255, 206, 86, 1)',
+                            backgroundColor: 'rgba(255, 206, 86, 0.2)',
+                            fill: true,
+                            tension: 0.4
+                        },
+                        {
+                            label: 'Network',
+                            data: networkData,
+                            borderColor: 'rgba(75, 192, 192, 1)',
+                            backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                            fill: true,
+                            tension: 0.4
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            max: 100,
+                            title: {
+                                display: true,
+                                text: 'Usage (%)'
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            position: 'top'
+                        },
+                        tooltip: {
+                            mode: 'index',
+                            intersect: false
+                        }
+                    },
+                    interaction: {
+                        mode: 'nearest',
+                        axis: 'x',
+                        intersect: false
+                    }
+                }
+            });
+        }
+    });
+    {% endif %}
+</script>
+{% endblock %} 

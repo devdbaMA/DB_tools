@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # db_check
 
 
@@ -91,3 +92,88 @@ For open source projects, say how it is licensed.
 
 ## Project status
 If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+=======
+# PostgreSQL Backup Manager
+
+A web-based PostgreSQL database backup management tool built with Flask.
+
+## Features
+
+- Create full, schema-only, or data-only backups
+- Custom backup location support
+- Backup history tracking
+- User-friendly web interface
+- Secure password handling
+
+## Prerequisites
+
+- Python 3.7+
+- PostgreSQL client tools (pg_dump)
+- PostgreSQL server access
+
+## Installation
+
+1. Clone this repository:
+```bash
+git clone <repository-url>
+cd postgresql-backup-manager
+```
+
+2. Create a virtual environment and activate it:
+```bash
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+```
+
+3. Install the required packages:
+```bash
+pip install -r requirements.txt
+```
+
+## Configuration
+
+The database connection parameters are configured in `app.py`. Update the `DB_PARAMS` dictionary with your database credentials:
+
+```python
+DB_PARAMS = {
+    'host': '172.18.18.129',
+    'database': 'postgres',
+    'user': 'postgres',
+    'password': 'postgres'
+}
+```
+
+## Usage
+
+1. Start the Flask application:
+```bash
+python app.py
+```
+
+2. Open your web browser and navigate to:
+```
+http://localhost:5000
+```
+
+3. Use the web interface to:
+   - Create new backups
+   - Choose backup type (full/schema/data)
+   - Specify backup location
+   - View backup history
+
+## Backup Types
+
+- **Full Backup**: Backs up the entire database (structure and data)
+- **Schema Only**: Backs up only the database structure (tables, functions, etc.)
+- **Data Only**: Backs up only the data, without schema information
+
+## Security Notes
+
+- The application uses environment variables for sensitive data
+- Passwords are never logged or displayed
+- All backup files are stored with timestamps for easy tracking
+
+## License
+
+MIT License 
+>>>>>>> dad3b3c (v1)

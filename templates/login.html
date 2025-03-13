@@ -1,0 +1,273 @@
+{% extends "base.html" %}
+
+{% block title %}Sign In - PostgreSQL Backup Manager{% endblock %}
+
+{% block content %}
+<div class="login-container">
+    <div class="feather-bg left-feathers"></div>
+    
+    <div class="login-content">
+        <div class="logo-container">
+            <div class="logo">
+                <span>greenFeather</span>
+            </div>
+        </div>
+        
+        <div class="login-form-container">
+            <h1>Sign In</h1>
+            
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for category, message in messages %}
+                        <div class="alert alert-{{ category }} alert-dismissible fade show">
+                            {{ message }}
+                            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                        </div>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
+            
+            <form method="POST" action="{{ url_for('login') }}">
+                {{ form.csrf_token }}
+                
+                <div class="form-group">
+                    <label for="username">Email Address</label>
+                    {{ form.username(class="form-control", id="username", placeholder="john@example.com") }}
+                    {% if form.username.errors %}
+                        {% for error in form.username.errors %}
+                            <span class="text-danger">{{ error }}</span>
+                        {% endfor %}
+                    {% endif %}
+                </div>
+                
+                <div class="form-group">
+                    <div class="password-header">
+                        <label for="password">Password</label>
+                        <a href="#" class="forgot-password">Forgot Password?</a>
+                    </div>
+                    {{ form.password(class="form-control", id="password", placeholder="Enter your password") }}
+                    {% if form.password.errors %}
+                        {% for error in form.password.errors %}
+                            <span class="text-danger">{{ error }}</span>
+                        {% endfor %}
+                    {% endif %}
+                </div>
+                
+                <div class="form-group">
+                    {{ form.submit(class="btn btn-primary sign-in-btn", value="Sign In") }}
+                </div>
+                
+                <div class="create-account">
+                    <p>Don't have an account? <a href="{{ url_for('register') }}">Create your account</a></p>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <div class="feather-bg right-feathers"></div>
+</div>
+{% endblock %}
+
+{% block styles %}
+<style>
+    body {
+        margin: 0;
+        padding: 0;
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        background-color: #f5f5f5;
+        height: 100vh;
+        overflow: hidden;
+    }
+    
+    .login-container {
+        display: flex;
+        height: 100vh;
+        width: 100%;
+        position: relative;
+        background-image: url('https://images.unsplash.com/photo-1551288049-bebda4e38f71?ixlib=rb-1.2.1&auto=format&fit=crop&w=1950&q=80');
+        background-size: cover;
+        background-position: center;
+        background-repeat: no-repeat;
+    }
+    
+    .feather-bg {
+        flex: 1;
+        background-size: cover;
+        background-position: center;
+        position: relative;
+        background-color: rgba(46, 196, 182, 0.7);
+        backdrop-filter: blur(5px);
+    }
+    
+    .left-feathers {
+        background: linear-gradient(135deg, rgba(46, 196, 182, 0.8) 0%, rgba(60, 174, 163, 0.8) 100%);
+        clip-path: polygon(0 0, 100% 0, 70% 100%, 0 100%);
+    }
+    
+    .right-feathers {
+        background: linear-gradient(135deg, rgba(60, 174, 163, 0.8) 0%, rgba(46, 196, 182, 0.8) 100%);
+        clip-path: polygon(30% 0, 100% 0, 100% 100%, 0 100%);
+    }
+    
+    .login-content {
+        flex: 2;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        z-index: 10;
+        padding: 0 20px;
+        position: relative;
+    }
+    
+    .login-content::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background-color: rgba(255, 255, 255, 0.2);
+        backdrop-filter: blur(3px);
+        z-index: -1;
+    }
+    
+    .logo-container {
+        margin-bottom: 20px;
+    }
+    
+    .logo {
+        background-color: #2ec4b6;
+        color: white;
+        font-size: 24px;
+        font-style: italic;
+        padding: 10px 20px;
+        border-radius: 50px;
+        display: inline-block;
+    }
+    
+    .login-form-container {
+        background-color: white;
+        border-radius: 10px;
+        padding: 40px;
+        width: 100%;
+        max-width: 500px;
+        box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+    }
+    
+    .login-form-container h1 {
+        font-size: 32px;
+        margin-bottom: 30px;
+        color: #333;
+        text-align: center;
+    }
+    
+    .form-group {
+        margin-bottom: 25px;
+    }
+    
+    .form-group label {
+        display: block;
+        margin-bottom: 8px;
+        color: #555;
+        font-weight: 500;
+    }
+    
+    .form-control {
+        width: 100%;
+        padding: 12px 15px;
+        border: 1px solid #ddd;
+        border-radius: 5px;
+        font-size: 16px;
+        transition: border-color 0.3s;
+    }
+    
+    .form-control:focus {
+        border-color: #2ec4b6;
+        box-shadow: 0 0 0 0.2rem rgba(46, 196, 182, 0.25);
+    }
+    
+    .password-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    
+    .forgot-password {
+        color: #2ec4b6;
+        text-decoration: none;
+        font-size: 14px;
+    }
+    
+    .forgot-password:hover {
+        text-decoration: underline;
+    }
+    
+    .sign-in-btn {
+        width: 100%;
+        padding: 12px;
+        background-color: #2ec4b6;
+        border: none;
+        border-radius: 5px;
+        color: white;
+        font-size: 16px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background-color 0.3s;
+    }
+    
+    .sign-in-btn:hover {
+        background-color: #25a99d;
+    }
+    
+    .create-account {
+        text-align: center;
+        margin-top: 20px;
+    }
+    
+    .create-account a {
+        color: #2ec4b6;
+        text-decoration: none;
+        font-weight: 600;
+    }
+    
+    .create-account a:hover {
+        text-decoration: underline;
+    }
+    
+    /* Hide sidebar on login page */
+    .sidebar {
+        display: none !important;
+    }
+    
+    .content {
+        margin-left: 0 !important;
+        padding: 0 !important;
+        max-width: 100% !important;
+        flex: 0 0 100% !important;
+    }
+    
+    .container-fluid {
+        padding: 0 !important;
+    }
+    
+    .row {
+        margin: 0 !important;
+    }
+    
+    /* Responsive adjustments */
+    @media (max-width: 768px) {
+        .feather-bg {
+            display: none;
+        }
+        
+        .login-content {
+            flex: 1;
+        }
+        
+        .login-form-container {
+            padding: 30px 20px;
+        }
+    }
+</style>
+{% endblock %} 

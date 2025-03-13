@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-5">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2>Database Connections</h2>
+        <div>
+            <a href="{{ url_for('add_connection') }}" class="btn btn-primary">
+                <i class="bi bi-plus-circle"></i> Add New Connection
+            </a>
+            <a href="{{ url_for('index') }}" class="btn btn-secondary">
+                <i class="bi bi-arrow-left"></i> Back to Dashboard
+            </a>
+        </div>
+    </div>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                <div class="alert alert-{{ category }}">{{ message }}</div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+
+    {% if connections %}
+        <div class="table-responsive">
+            <table class="table table-striped table-hover">
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Host</th>
+                        <th>Database</th>
+                        <th>Username</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for conn in connections %}
+                        <tr>
+                            <td>{{ conn[1] }}</td>
+                            <td>{{ conn[2] }}</td>
+                            <td>{{ conn[3] }}</td>
+                            <td>{{ conn[4] }}</td>
+                            <td>
+                                {% if conn[5] %}
+                                    <span class="badge bg-success">Active</span>
+                                {% else %}
+                                    <span class="badge bg-secondary">Inactive</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if not conn[5] %}
+                                    <a href="{{ url_for('activate_connection', conn_id=conn[0]) }}" 
+                                       class="btn btn-sm btn-success" 
+                                       title="Activate Connection">
+                                        <i class="bi bi-play-circle"></i>
+                                    </a>
+                                {% endif %}
+                                <a href="{{ url_for('delete_connection', conn_id=conn[0]) }}"
+                                   class="btn btn-sm btn-danger"
+                                   onclick="return confirm('Are you sure you want to delete this connection?')"
+                                   title="Delete Connection">
+                                    <i class="bi bi-trash"></i>
+                                </a>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <div class="alert alert-info">
+            No database connections found. Click "Add New Connection" to create one.
+        </div>
+    {% endif %}
+</div>
+{% endblock %} 
