@@ -4,7 +4,9 @@
 
 {% block head %}
 {{ super() }}
-<!-- Add Chart.js library -->
+<!-- Add Bootstrap Icons -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css">
+<!-- Add Chart.js -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
 <style>
     .activity-chart-container {
@@ -12,6 +14,7 @@
         height: 300px;
         background-color: #f8f9fa;
         border: 1px solid #ddd;
+        margin-bottom: 20px;
     }
     .time-label {
         font-size: 11px;
@@ -102,41 +105,24 @@
     <div class="card mb-4">
         <div class="card-body p-0">
             <div class="row">
-                <div class="col-md-10">
+                <div class="col-12">
                     <div class="activity-chart-container">
                         <canvas id="activity-chart"></canvas>
-        </div>
-                </div>
-                <div class="col-md-2 border-start p-2">
-                    <div class="d-flex flex-column">
-                        <div class="legend-item mb-2"><div class="legend-color segment-other"></div> Other</div>
-                        <div class="legend-item mb-2"><div class="legend-color" style="background-color: #6c757d;"></div> Cluster</div>
-                        <div class="legend-item mb-2"><div class="legend-color" style="background-color: #ffc107;"></div> Queueing</div>
-                        <div class="legend-item mb-2"><div class="legend-color" style="background-color: #17a2b8;"></div> Network</div>
-                        <div class="legend-item mb-2"><div class="legend-color" style="background-color: #6f42c1;"></div> Administrative</div>
-                        <div class="legend-item mb-2"><div class="legend-color" style="background-color: #5a6268;"></div> Configuration</div>
-                        <div class="legend-item mb-2"><div class="legend-color segment-other"></div> Commit</div>
-                        <div class="legend-item mb-2"><div class="legend-color" style="background-color: #dc3545;"></div> Application</div>
-                        <div class="legend-item mb-2"><div class="legend-color" style="background-color: #6610f2;"></div> Concurrency</div>
-                        <div class="legend-item mb-2"><div class="legend-color segment-io"></div> System I/O</div>
-                        <div class="legend-item mb-2"><div class="legend-color" style="background-color: #0dcaf0;"></div> User I/O</div>
-                        <div class="legend-item mb-2"><div class="legend-color" style="background-color: #adb5bd;"></div> Scheduler</div>
-                        <div class="legend-item mb-2"><div class="legend-color segment-cpu"></div> CPU + CPU Wait</div>
                     </div>
                 </div>
             </div>
             <div class="p-2 border-top">
-                <div class="d-flex align-items-center">
-                    <div class="me-3">
+                <div class="d-flex align-items-center justify-content-between flex-wrap">
+                    <div class="me-3 mb-2">
                         <span class="badge bg-secondary">Selected:</span>
                         <span id="selected-range">Last 30 minutes</span>
                     </div>
-                    <div>
-                        <button class="btn btn-sm btn-outline-secondary me-1 time-range-btn active" data-range="Last 30 minutes">30m</button>
-                        <button class="btn btn-sm btn-outline-secondary me-1 time-range-btn" data-range="Last 1 hour">1h</button>
-                        <button class="btn btn-sm btn-outline-secondary me-1 time-range-btn" data-range="Last 2 hours">2h</button>
-                        <button class="btn btn-sm btn-outline-secondary me-1 time-range-btn" data-range="Last 6 hours">6h</button>
-                        <button class="btn btn-sm btn-outline-secondary time-range-btn" data-range="Last 24 hours">24h</button>
+                    <div class="d-flex flex-wrap">
+                        <button class="btn btn-sm btn-outline-secondary me-1 mb-1 time-range-btn active" data-range="Last 30 minutes">30m</button>
+                        <button class="btn btn-sm btn-outline-secondary me-1 mb-1 time-range-btn" data-range="Last 1 hour">1h</button>
+                        <button class="btn btn-sm btn-outline-secondary me-1 mb-1 time-range-btn" data-range="Last 2 hours">2h</button>
+                        <button class="btn btn-sm btn-outline-secondary me-1 mb-1 time-range-btn" data-range="Last 6 hours">6h</button>
+                        <button class="btn btn-sm btn-outline-secondary mb-1 time-range-btn" data-range="Last 24 hours">24h</button>
                     </div>
                 </div>
             </div>
@@ -707,888 +693,322 @@ VACUUM ANALYZE;">VACUUM ANALYZE...</button>
 {% block scripts %}
     {% if show_data %}
 <script>
-    // Set the current date/time for the selected time interval
-    document.addEventListener('DOMContentLoaded', function() {
-        const now = new Date();
-        const options = { 
-            year: 'numeric', 
-            month: 'long', 
-            day: 'numeric',
-            hour: 'numeric',
-            minute: 'numeric',
-            second: 'numeric',
-            timeZoneName: 'short'
-        };
-        document.getElementById('selected-time').textContent = now.toLocaleDateString('en-US', options);
-        
-        // Set up refresh buttons
-        document.getElementById('manual-refresh').addEventListener('click', function() {
-        location.reload();
-        });
-        
-        // Auto-refresh is enabled by default
-        const autoRefreshBtn = document.getElementById('auto-refresh');
-        autoRefreshBtn.classList.add('active');
-        let refreshInterval = setInterval(function() {
-            location.reload();
-        }, 60000); // Refresh every 1 minute
-        autoRefreshBtn.innerHTML = '<i class="bi bi-pause"></i>';
-        autoRefreshBtn.setAttribute('data-interval', refreshInterval);
-        
-        autoRefreshBtn.addEventListener('click', function() {
-            const btn = this;
-            btn.classList.toggle('active');
-            if (btn.classList.contains('active')) {
-                refreshInterval = setInterval(function() {
-                    location.reload();
-                }, 60000); // Refresh every 1 minute
-                btn.setAttribute('data-interval', refreshInterval);
-                btn.innerHTML = '<i class="bi bi-pause"></i>';
-            } else {
-                clearInterval(btn.getAttribute('data-interval'));
-                btn.innerHTML = '<i class="bi bi-arrow-clockwise"></i>';
-            }
-        });
-        
-        // Set up time range buttons
-        const timeButtons = document.querySelectorAll('.time-range-btn');
-        timeButtons.forEach(btn => {
-            btn.addEventListener('click', function() {
-                timeButtons.forEach(b => b.classList.remove('active'));
-                this.classList.add('active');
-                document.getElementById('selected-range').textContent = this.getAttribute('data-range');
-                // In a real app, this would trigger a data reload for the selected time range
-            });
-        });
-    });
+    // Chart.js loader with fallbacks
+    function loadChartJs(callback) {
+        const cdnUrls = [
+            'https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js',
+            'https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js',
+            'https://unpkg.com/chart.js@3.9.1/dist/chart.min.js'
+        ];
 
-    // Activity chart
-    document.addEventListener('DOMContentLoaded', function() {
-        // Generate random data for demonstration
-        const labels = [];
-        const cpuData = [];
-        const userIOData = [];
-        const systemIOData = [];
-        const commitData = [];
-        const applicationData = [];
-        const concurrencyData = [];
-        const configData = [];
-        const otherData = [];
-        const clusterData = [];
-        const queueingData = [];
-        const networkData = [];
-        const administrativeData = [];
-        const schedulerData = [];
-        
-        const now = new Date();
-        for (let i = 30; i >= 0; i--) {
-            const time = new Date(now.getTime() - i * 60000);
-            labels.push(time.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}));
-            
-            // Generate more realistic looking data with peaks and valleys
-            let baseValue = Math.random() * 0.2;
-            
-            // Default low values
-            let cpuVal = baseValue;
-            let userIOVal = baseValue;
-            let systemIOVal = baseValue;
-            let commitVal = baseValue;
-            let applicationVal = baseValue;
-            let concurrencyVal = baseValue;
-            let configVal = baseValue;
-            let otherVal = baseValue;
-            let clusterVal = baseValue;
-            let queueingVal = baseValue;
-            let networkVal = baseValue;
-            let administrativeVal = baseValue;
-            let schedulerVal = baseValue;
-            
-            // Create activity spikes at specific intervals to mimic the image
-            if (i >= 5 && i <= 10 || i >= 18 && i <= 22 || i >= 25 && i <= 30) {
-                // High activity periods
-                let activityMultiplier = 0;
-                
-                if (i >= 25 && i <= 30) {
-                    // First peak (rightmost in chart)
-                    activityMultiplier = 6 - Math.abs(27.5 - i) * 0.8;
-                } else if (i >= 18 && i <= 22) {
-                    // Middle peak
-                    activityMultiplier = 5 - Math.abs(20 - i) * 0.8;
-                } else if (i >= 5 && i <= 10) {
-                    // Last peak (leftmost in chart)
-                    activityMultiplier = 4 - Math.abs(7.5 - i) * 0.8;
-                }
-                
-                // Distribute activity across different categories
-                cpuVal = Math.max(0, Math.min(2, Math.random() * 0.8 + 0.4)) * activityMultiplier * 0.2;
-                userIOVal = Math.max(0, Math.min(1.5, Math.random() * 0.6 + 0.3)) * activityMultiplier * 0.2;
-                systemIOVal = Math.max(0, Math.min(1.2, Math.random() * 0.5 + 0.2)) * activityMultiplier * 0.3;
-                commitVal = Math.max(0, Math.min(2.5, Math.random() * 1.2 + 0.8)) * activityMultiplier * 0.4;
-                applicationVal = Math.max(0, Math.min(0.8, Math.random() * 0.4 + 0.2)) * activityMultiplier * 0.1;
-                concurrencyVal = Math.max(0, Math.min(0.5, Math.random() * 0.3 + 0.1)) * activityMultiplier * 0.05;
-                configVal = Math.max(0, Math.min(0.3, Math.random() * 0.2 + 0.1)) * activityMultiplier * 0.05;
-                otherVal = Math.max(0, Math.min(0.4, Math.random() * 0.2 + 0.1)) * activityMultiplier * 0.05;
-                clusterVal = Math.max(0, Math.min(0.6, Math.random() * 0.3 + 0.2)) * activityMultiplier * 0.1;
-                queueingVal = Math.max(0, Math.min(0.5, Math.random() * 0.3 + 0.1)) * activityMultiplier * 0.05;
-                networkVal = Math.max(0, Math.min(0.7, Math.random() * 0.4 + 0.2)) * activityMultiplier * 0.1;
-                administrativeVal = Math.max(0, Math.min(0.4, Math.random() * 0.2 + 0.1)) * activityMultiplier * 0.05;
-                schedulerVal = Math.max(0, Math.min(0.6, Math.random() * 0.3 + 0.2)) * activityMultiplier * 0.1;
+        function tryLoadScript(urls) {
+            if (urls.length === 0) {
+                console.error('Failed to load Chart.js from all CDNs');
+                document.querySelectorAll('.activity-chart-container').forEach(container => {
+                    showChartError(container, 'Failed to load Chart.js from all CDNs. Please check your internet connection.');
+                });
+                return;
             }
-            
-            cpuData.push(cpuVal);
-            userIOData.push(userIOVal);
-            systemIOData.push(systemIOVal);
-            commitData.push(commitVal);
-            applicationData.push(applicationVal);
-            concurrencyData.push(concurrencyVal);
-            configData.push(configVal);
-            otherData.push(otherVal);
-            clusterData.push(clusterVal);
-            queueingData.push(queueingVal);
-            networkData.push(networkVal);
-            administrativeData.push(administrativeVal);
-            schedulerData.push(schedulerVal);
+
+            const script = document.createElement('script');
+            script.src = urls[0];
+            script.onload = function() {
+                console.log('Chart.js loaded successfully from ' + urls[0]);
+                callback();
+            };
+            script.onerror = function() {
+                console.warn('Failed to load Chart.js from ' + urls[0] + ', trying next CDN...');
+                document.body.removeChild(script);
+                tryLoadScript(urls.slice(1));
+            };
+            document.body.appendChild(script);
         }
-        
-        const ctx = document.getElementById('activity-chart');
-        if (ctx) {
-            new Chart(ctx, {
-                type: 'line',
-                data: {
-                    labels: labels,
-                    datasets: [
-                        {
-                            label: 'CPU + CPU Wait',
-                            data: cpuData,
-                            backgroundColor: 'rgba(0, 180, 0, 0.8)',
-                            borderColor: 'rgba(0, 180, 0, 0)',
-                            fill: true,
-                            tension: 0.4,
-                            stack: 'Stack 0'
+
+        if (typeof Chart !== 'undefined') {
+            console.log('Chart.js already loaded');
+            callback();
+        } else {
+            console.log('Attempting to load Chart.js');
+            tryLoadScript(cdnUrls);
+        }
+    }
+
+    function showChartError(container, message) {
+        container.innerHTML = `
+            <div class="alert alert-danger m-3">
+                <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                ${message}
+                <button class="btn btn-sm btn-outline-danger ms-3" onclick="window.initializeCharts()">
+                    <i class="bi bi-arrow-clockwise me-1"></i>Retry
+                </button>
+            </div>
+        `;
+    }
+
+    // Chart configuration with all activity types
+    const activityTypes = [
+        { label: 'CPU + CPU Wait', color: 'rgba(45, 152, 218, 0.7)' },
+        { label: 'System I/O', color: 'rgba(46, 204, 113, 0.7)' },
+        { label: 'User I/O', color: 'rgba(155, 89, 182, 0.7)' },
+        { label: 'Scheduler', color: 'rgba(241, 196, 15, 0.7)' },
+        { label: 'Concurrency', color: 'rgba(230, 126, 34, 0.7)' },
+        { label: 'Application', color: 'rgba(231, 76, 60, 0.7)' },
+        { label: 'Commit', color: 'rgba(52, 152, 219, 0.7)' },
+        { label: 'Configuration', color: 'rgba(149, 165, 166, 0.7)' },
+        { label: 'Administrative', color: 'rgba(142, 68, 173, 0.7)' },
+        { label: 'Network', color: 'rgba(39, 174, 96, 0.7)' },
+        { label: 'Queueing', color: 'rgba(243, 156, 18, 0.7)' },
+        { label: 'Cluster', color: 'rgba(127, 140, 141, 0.7)' },
+        { label: 'Other', color: 'rgba(211, 84, 0, 0.7)' }
+    ];
+
+    // Make initializeCharts available globally
+    window.initializeCharts = function() {
+        console.log('Initializing charts...');
+        loadChartJs(function() {
+            try {
+                // Initialize Chart.js defaults with modern styling
+                Chart.defaults.font.family = "'Inter', 'Segoe UI', system-ui, sans-serif";
+                Chart.defaults.font.size = 11;
+                Chart.defaults.plugins.tooltip.backgroundColor = 'rgba(33, 33, 33, 0.95)';
+                Chart.defaults.plugins.tooltip.padding = 10;
+                Chart.defaults.plugins.tooltip.cornerRadius = 4;
+                Chart.defaults.plugins.tooltip.titleFont.size = 13;
+                Chart.defaults.plugins.legend.position = 'right';
+
+                const now = new Date();
+                const options = { 
+                    year: 'numeric', 
+                    month: 'long', 
+                    day: 'numeric',
+                    hour: 'numeric',
+                    minute: 'numeric',
+                    second: 'numeric',
+                    timeZoneName: 'short'
+                };
+                
+                const selectedTime = document.getElementById('selected-time');
+                if (selectedTime) {
+                    selectedTime.textContent = now.toLocaleDateString('en-US', options);
+                }
+
+                // Generate time labels
+                const timeLabels = [];
+                for (let i = 30; i >= 0; i--) {
+                    const time = new Date(now.getTime() - i * 60000);
+                    timeLabels.push(time.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}));
+                }
+
+                // Initialize activity chart with modern styling
+                const activityChartCtx = document.getElementById('activity-chart');
+                if (activityChartCtx) {
+                    const datasets = activityTypes.map(type => ({
+                        label: type.label,
+                        data: generateRealisticData(
+                            Math.random() * 30 + 10,
+                            5,
+                            timeLabels.length
+                        ),
+                        backgroundColor: type.color,
+                        borderColor: type.color.replace('0.7', '1'),
+                        borderWidth: 1.5,
+                        fill: true,
+                        tension: 0.4,
+                        pointRadius: 0,
+                        pointHoverRadius: 4,
+                        pointHoverBorderWidth: 2,
+                        pointHoverBackgroundColor: '#fff',
+                        pointHoverBorderColor: type.color.replace('0.7', '1')
+                    }));
+
+                    new Chart(activityChartCtx, {
+                        type: 'line',
+                        data: {
+                            labels: timeLabels,
+                            datasets: datasets
                         },
-                        {
-                            label: 'Scheduler',
-                            data: schedulerData,
-                            backgroundColor: 'rgba(173, 216, 230, 0.8)',
-                            borderColor: 'rgba(173, 216, 230, 0)',
-                            fill: true,
-                            tension: 0.4,
-                            stack: 'Stack 0'
-                        },
-                        {
-                            label: 'User I/O',
-                            data: userIOData,
-                            backgroundColor: 'rgba(0, 191, 255, 0.8)',
-                            borderColor: 'rgba(0, 191, 255, 0)',
-                            fill: true,
-                            tension: 0.4,
-                            stack: 'Stack 0'
-                        },
-                        {
-                            label: 'System I/O',
-                            data: systemIOData,
-                            backgroundColor: 'rgba(30, 144, 255, 0.8)',
-                            borderColor: 'rgba(30, 144, 255, 0)',
-                            fill: true,
-                            tension: 0.4,
-                            stack: 'Stack 0'
-                        },
-                        {
-                            label: 'Concurrency',
-                            data: concurrencyData,
-                            backgroundColor: 'rgba(139, 0, 139, 0.8)',
-                            borderColor: 'rgba(139, 0, 139, 0)',
-                            fill: true,
-                            tension: 0.4,
-                            stack: 'Stack 0'
-                        },
-                        {
-                            label: 'Application',
-                            data: applicationData,
-                            backgroundColor: 'rgba(178, 34, 34, 0.8)',
-                            borderColor: 'rgba(178, 34, 34, 0)',
-                            fill: true,
-                            tension: 0.4,
-                            stack: 'Stack 0'
-                        },
-                        {
-                            label: 'Commit',
-                            data: commitData,
-                            backgroundColor: 'rgba(255, 140, 0, 0.8)',
-                            borderColor: 'rgba(255, 140, 0, 0)',
-                            fill: true,
-                            tension: 0.4,
-                            stack: 'Stack 0'
-                        },
-                        {
-                            label: 'Configuration',
-                            data: configData,
-                            backgroundColor: 'rgba(128, 128, 128, 0.8)',
-                            borderColor: 'rgba(128, 128, 128, 0)',
-                            fill: true,
-                            tension: 0.4,
-                            stack: 'Stack 0'
-                        },
-                        {
-                            label: 'Administrative',
-                            data: administrativeData,
-                            backgroundColor: 'rgba(85, 107, 47, 0.8)',
-                            borderColor: 'rgba(85, 107, 47, 0)',
-                            fill: true,
-                            tension: 0.4,
-                            stack: 'Stack 0'
-                        },
-                        {
-                            label: 'Network',
-                            data: networkData,
-                            backgroundColor: 'rgba(70, 130, 180, 0.8)',
-                            borderColor: 'rgba(70, 130, 180, 0)',
-                            fill: true,
-                            tension: 0.4,
-                            stack: 'Stack 0'
-                        },
-                        {
-                            label: 'Queueing',
-                            data: queueingData,
-                            backgroundColor: 'rgba(218, 165, 32, 0.8)',
-                            borderColor: 'rgba(218, 165, 32, 0)',
-                            fill: true,
-                            tension: 0.4,
-                            stack: 'Stack 0'
-                        },
-                        {
-                            label: 'Cluster',
-                            data: clusterData,
-                            backgroundColor: 'rgba(169, 169, 169, 0.8)',
-                            borderColor: 'rgba(169, 169, 169, 0)',
-                            fill: true,
-                            tension: 0.4,
-                            stack: 'Stack 0'
-                        },
-                        {
-                            label: 'Other',
-                            data: otherData,
-                            backgroundColor: 'rgba(255, 182, 193, 0.8)',
-                            borderColor: 'rgba(255, 182, 193, 0)',
-                            fill: true,
-                            tension: 0.4,
-                            stack: 'Stack 0'
-                        }
-                    ]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    scales: {
-                        x: {
-                            grid: {
-                                color: 'rgba(0, 0, 0, 0.1)'
-                            }
-                        },
-                        y: {
-                            beginAtZero: true,
-                            max: 8,
-                            ticks: {
-                                stepSize: 1,
-                                callback: function(value) {
-                                    if (value === 8) return 'Maximum CPU';
-                                    return value;
-                                }
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            interaction: {
+                                mode: 'nearest',
+                                axis: 'x',
+                                intersect: false
                             },
-                            grid: {
-                                color: 'rgba(0, 0, 0, 0.1)'
-                            },
-                            stacked: true
-                        }
-                    },
-                    plugins: {
-                        legend: {
-                            display: false
-                        },
-                        tooltip: {
-                            mode: 'index',
-                            intersect: false,
-                            callbacks: {
-                                title: function(tooltipItems) {
-                                    return 'Time: ' + tooltipItems[0].label;
+                            plugins: {
+                                legend: {
+                                    position: 'right',
+                                    align: 'start',
+                                    labels: {
+                                        boxWidth: 12,
+                                        padding: 15,
+                                        font: {
+                                            size: 11
+                                        },
+                                        usePointStyle: true,
+                                        pointStyle: 'circle'
+                                    }
                                 },
-                                label: function(context) {
-                                    let label = context.dataset.label || '';
-                                    if (label) {
-                                        label += ': ';
-                                    }
-                                    if (context.parsed.y !== null) {
-                                        label += context.parsed.y.toFixed(2);
-                                    }
-                                    return label;
-                                }
-                            }
-                        }
-                    },
-                    interaction: {
-                        mode: 'nearest',
-                        axis: 'x',
-                        intersect: false
-                    },
-                    elements: {
-                        line: {
-                            borderWidth: 0
-                        },
-                        point: {
-                            radius: 0,
-                            hitRadius: 10,
-                            hoverRadius: 5
-                        }
-                    }
-                }
-            });
-        }
-    });
-
-    // Database Distribution Chart
-    document.addEventListener('DOMContentLoaded', function() {
-        const dbDistributionCtx = document.getElementById('dbDistributionChart');
-        if (dbDistributionCtx) {
-            // Create sample data for database distribution
-            const dbNames = [];
-            const dbSizes = [];
-            const dbColors = [
-                'rgba(255, 99, 132, 0.7)',
-                'rgba(54, 162, 235, 0.7)',
-                'rgba(255, 206, 86, 0.7)',
-                'rgba(75, 192, 192, 0.7)',
-                'rgba(153, 102, 255, 0.7)',
-                'rgba(255, 159, 64, 0.7)'
-            ];
-            
-            {% if db_sizes %}
-                {% for db in db_sizes %}
-                    dbNames.push("{{ db[0] }}");
-                    {% if 'MB' in db[1] %}
-                        dbSizes.push({{ db[1].split(' ')[0]|float }});
-                    {% elif 'GB' in db[1] %}
-                        dbSizes.push({{ db[1].split(' ')[0]|float * 1024 }});
-                    {% else %}
-                        dbSizes.push(0);
-    {% endif %}
-                {% endfor %}
-            {% else %}
-                // Sample data if no real data is available
-                dbNames.push('postgres', 'template1', 'template0', 'db1', 'db2');
-                dbSizes.push(250, 120, 80, 450, 320);
-            {% endif %}
-            
-            new Chart(dbDistributionCtx, {
-                type: 'pie',
-                data: {
-                    labels: dbNames,
-                    datasets: [{
-                        data: dbSizes,
-                        backgroundColor: dbColors,
-                        borderColor: dbColors.map(color => color.replace('0.7', '1')),
-                        borderWidth: 1
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: {
-                            position: 'right',
-                            labels: {
-                                font: {
-                                    size: 12
-                                }
-                            }
-                        },
-                        title: {
-                            display: true,
-                            text: 'Database Size Distribution',
-                            font: {
-                                size: 16
-                            }
-                        },
-                        tooltip: {
-                            callbacks: {
-                                label: function(context) {
-                                    const value = context.raw;
-                                    if (value >= 1024) {
-                                        return context.label + ': ' + (value / 1024).toFixed(2) + ' GB';
-                                    } else {
-                                        return context.label + ': ' + value.toFixed(2) + ' MB';
+                                tooltip: {
+                                    mode: 'index',
+                                    intersect: false,
+                                    backgroundColor: 'rgba(33, 33, 33, 0.95)',
+                                    titleColor: 'rgba(255, 255, 255, 0.9)',
+                                    bodyColor: 'rgba(255, 255, 255, 0.9)',
+                                    borderColor: 'rgba(255, 255, 255, 0.1)',
+                                    borderWidth: 1,
+                                    padding: 10,
+                                    cornerRadius: 4,
+                                    callbacks: {
+                                        label: function(context) {
+                                            return context.dataset.label + ': ' + context.parsed.y.toFixed(1) + '%';
+                                        }
                                     }
                                 }
-                            }
-                        }
-                    }
-                }
-            });
-        }
-        
-        // Query Types Distribution Chart
-        const queryTypesCtx = document.getElementById('queryTypesChart');
-        if (queryTypesCtx) {
-            // Create sample data for query types
-            const queryTypes = ['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'CREATE', 'ALTER', 'DROP', 'OTHER'];
-            const queryTypeCounts = [65, 12, 18, 5, 3, 2, 1, 4];
-            const queryTypeColors = [
-                'rgba(54, 162, 235, 0.7)',
-                'rgba(75, 192, 192, 0.7)',
-                'rgba(255, 206, 86, 0.7)',
-                'rgba(255, 99, 132, 0.7)',
-                'rgba(153, 102, 255, 0.7)',
-                'rgba(255, 159, 64, 0.7)',
-                'rgba(201, 203, 207, 0.7)',
-                'rgba(108, 117, 125, 0.7)'
-            ];
-            
-            new Chart(queryTypesCtx, {
-                type: 'bar',
-                data: {
-                    labels: queryTypes,
-                    datasets: [{
-                        label: 'Query Count',
-                        data: queryTypeCounts,
-                        backgroundColor: queryTypeColors,
-                        borderColor: queryTypeColors.map(color => color.replace('0.7', '1')),
-                        borderWidth: 1
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    scales: {
-                        y: {
-                            beginAtZero: true,
-                            title: {
-                                display: true,
-                                text: 'Count'
-                            }
-                        }
-                    },
-                    plugins: {
-                        legend: {
-                            display: false
-                        },
-                        title: {
-                            display: true,
-                            text: 'SQL Query Types',
-                            font: {
-                                size: 16
-                            }
-                        }
-                    }
-                }
-            });
-        }
-        
-        // Resource Usage Over Time Chart
-        const resourceUsageCtx = document.getElementById('resourceUsageChart');
-        if (resourceUsageCtx) {
-            // Use the same time labels as the activity chart
-            const resourceLabels = labels;
-            
-            // Generate random data for demonstration
-            function generateRandomData(baseValue, variance, count) {
-                const data = [];
-                let value = baseValue;
-                
-                for (let i = 0; i < count; i++) {
-                    // Add some randomness but keep within reasonable bounds
-                    value = Math.max(0, Math.min(100, value + (Math.random() * variance * 2 - variance)));
-                    data.push(value);
-                }
-                
-                return data;
-            }
-            
-            // Generate data with some peaks
-            const cpuUsage = generateRandomData(40, 15, labels.length);
-            const memoryUsage = generateRandomData(60, 10, labels.length);
-            const diskIOUsage = generateRandomData(30, 20, labels.length);
-            const networkUsage = generateRandomData(25, 15, labels.length);
-            
-            // Create peaks at certain points to match activity chart patterns
-            [5, 12, 20, 27].forEach(index => {
-                if (index < cpuUsage.length) {
-                    cpuUsage[index] = Math.min(95, cpuUsage[index] + 30);
-                    memoryUsage[index] = Math.min(90, memoryUsage[index] + 15);
-                    diskIOUsage[index] = Math.min(90, diskIOUsage[index] + 40);
-                    networkUsage[index] = Math.min(85, networkUsage[index] + 25);
-                }
-            });
-            
-            new Chart(resourceUsageCtx, {
-                type: 'line',
-                data: {
-                    labels: resourceLabels,
-                    datasets: [
-                        {
-                            label: 'CPU Usage',
-                            data: cpuUsage,
-                            borderColor: 'rgba(255, 99, 132, 1)',
-                            backgroundColor: 'rgba(255, 99, 132, 0.2)',
-                            fill: true,
-                            tension: 0.4
-                        },
-                        {
-                            label: 'Memory Usage',
-                            data: memoryUsage,
-                            borderColor: 'rgba(54, 162, 235, 1)',
-                            backgroundColor: 'rgba(54, 162, 235, 0.2)',
-                            fill: true,
-                            tension: 0.4
-                        },
-                        {
-                            label: 'Disk I/O',
-                            data: diskIOUsage,
-                            borderColor: 'rgba(255, 206, 86, 1)',
-                            backgroundColor: 'rgba(255, 206, 86, 0.2)',
-                            fill: true,
-                            tension: 0.4
-                        },
-                        {
-                            label: 'Network',
-                            data: networkUsage,
-                            borderColor: 'rgba(75, 192, 192, 1)',
-                            backgroundColor: 'rgba(75, 192, 192, 0.2)',
-                            fill: true,
-                            tension: 0.4
-                        }
-                    ]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    interaction: {
-                        mode: 'index',
-                        intersect: false
-                    },
-                    scales: {
-                        x: {
-                            grid: {
-                                color: 'rgba(0, 0, 0, 0.1)'
-                            }
-                        },
-                        y: {
-                            beginAtZero: true,
-                            max: 100,
-                            title: {
-                                display: true,
-                                text: 'Usage (%)'
                             },
-                            grid: {
-                                color: 'rgba(0, 0, 0, 0.1)'
+                            scales: {
+                                x: {
+                                    grid: {
+                                        display: true,
+                                        color: 'rgba(0, 0, 0, 0.05)',
+                                        drawBorder: false
+                                    },
+                                    ticks: {
+                                        font: {
+                                            size: 10
+                                        },
+                                        color: 'rgba(0, 0, 0, 0.6)'
+                                    }
+                                },
+                                y: {
+                                    stacked: true,
+                                    beginAtZero: true,
+                                    max: 100,
+                                    grid: {
+                                        display: true,
+                                        color: 'rgba(0, 0, 0, 0.05)',
+                                        drawBorder: false
+                                    },
+                                    ticks: {
+                                        font: {
+                                            size: 10
+                                        },
+                                        color: 'rgba(0, 0, 0, 0.6)',
+                                        callback: function(value) {
+                                            return value + '%';
+                                        }
+                                    }
+                                }
+                            },
+                            animation: {
+                                duration: 750,
+                                easing: 'easeOutQuart'
                             }
                         }
-                    },
-                    plugins: {
-                        legend: {
-                            position: 'top'
-                        },
-                        title: {
-                            display: true,
-                            text: 'System Resource Usage Over Time',
-                            font: {
-                                size: 16
-                            }
-                        },
-                        tooltip: {
-                            mode: 'index',
-                            intersect: false
-                        }
-                    }
+                    });
                 }
-            });
-        }
-    });
-</script>
 
-<script>
-    // Initialize the detailed activity monitoring charts
-    document.addEventListener('DOMContentLoaded', function() {
-        // Only initialize if we're showing data
-        if (document.getElementById('cpuChart')) {
-            // Generate time labels for the last 30 minutes
-            const timeLabels = [];
-            const now = new Date();
-            for (let i = 30; i >= 0; i--) {
-                const time = new Date(now.getTime() - i * 60000);
-                timeLabels.push(time.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}));
-            }
-            
-            // Function to generate random data with peaks
-            function generateActivityData(baseValue, variance, count) {
-                const data = [];
-                let value = baseValue;
-                
-                for (let i = 0; i < count; i++) {
-                    // Add some randomness but keep within reasonable bounds
-                    value = Math.max(0, Math.min(100, value + (Math.random() * variance * 2 - variance)));
-                    
-                    // Create peaks at specific points
-                    if (i % 7 === 0) {
-                        value = Math.min(100, value + Math.random() * 30);
-                    }
-                    
-                    data.push(value);
+                // Set up refresh functionality
+                const manualRefresh = document.getElementById('manual-refresh');
+                if (manualRefresh) {
+                    manualRefresh.addEventListener('click', initializeCharts);
                 }
-                
-                return data;
-            }
-            
-            // Create chart configuration
-            function createChartConfig(label, data, color) {
-                return {
-                    type: 'line',
-                    data: {
-                        labels: timeLabels,
-                        datasets: [{
-                            label: label,
-                            data: data,
-                            borderColor: color,
-                            backgroundColor: color.replace('1)', '0.2)'),
-                            fill: true,
-                            tension: 0.4
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        scales: {
-                            y: {
-                                beginAtZero: true,
-                                max: 100,
-                                title: {
-                                    display: true,
-                                    text: 'Usage (%)'
-                                }
-                            }
-                        },
-                        plugins: {
-                            title: {
-                                display: true,
-                                text: label + ' Activity Over Time',
-                                font: {
-                                    size: 16
-                                }
-                            }
-                        }
+
+                // Auto-refresh setup
+                const autoRefreshBtn = document.getElementById('auto-refresh');
+                let refreshInterval;
+
+                function startAutoRefresh() {
+                    refreshInterval = setInterval(initializeCharts, 60000);
+                }
+
+                function stopAutoRefresh() {
+                    if (refreshInterval) {
+                        clearInterval(refreshInterval);
                     }
+                }
+
+                if (autoRefreshBtn) {
+                    autoRefreshBtn.addEventListener('click', function() {
+                        this.classList.toggle('active');
+                        if (this.classList.contains('active')) {
+                            startAutoRefresh();
+                            this.innerHTML = '<i class="bi bi-pause"></i>';
+                        } else {
+                            stopAutoRefresh();
+                            this.innerHTML = '<i class="bi bi-arrow-clockwise"></i>';
+                        }
+                    });
+
+                    // Start auto-refresh by default
+                    autoRefreshBtn.classList.add('active');
+                    autoRefreshBtn.innerHTML = '<i class="bi bi-pause"></i>';
+                    startAutoRefresh();
+                }
+
+            } catch (error) {
+                console.error('Error in chart initialization:', error);
+                document.querySelectorAll('.activity-chart-container').forEach(container => {
+                    showChartError(container, 'Failed to initialize charts. Error: ' + error.message);
+                });
+            }
+        });
+    };
+
+    // Function to generate realistic sample data
+    function generateRealisticData(baseValue, variance, count) {
+        const data = [];
+        let value = baseValue;
+        
+        for (let i = 0; i < count; i++) {
+            value = Math.max(0, Math.min(100, value + (Math.random() * variance * 2 - variance)));
+            const periodicComponent = Math.sin(i / 5) * variance / 2;
+            value += periodicComponent;
+            value = Math.max(0, Math.min(100, value));
+            data.push(value);
+        }
+        
+        return data;
+    }
+
+    // SQL Modal functionality
+    const sqlModal = document.getElementById('sqlModal');
+    if (sqlModal) {
+        sqlModal.addEventListener('show.bs.modal', function (event) {
+            const button = event.relatedTarget;
+            const sqlId = button.getAttribute('data-sql-id');
+            const sqlText = button.getAttribute('data-sql-text');
+            
+            const modalSqlId = sqlModal.querySelector('#modal-sql-id');
+            const modalSqlText = sqlModal.querySelector('#modal-sql-text');
+            
+            if (modalSqlId) modalSqlId.textContent = sqlId;
+            if (modalSqlText) modalSqlText.textContent = sqlText;
+            
+            const modalSqlTextContainer = sqlModal.querySelector('#modal-sql-text-container');
+            if (modalSqlTextContainer) {
+                modalSqlTextContainer.onclick = function() {
+                    const selection = window.getSelection();
+                    const range = document.createRange();
+                    range.selectNodeContents(modalSqlText);
+                    selection.removeAllRanges();
+                    selection.addRange(range);
                 };
             }
-            
-            // Initialize all charts
-            const charts = [
-                { id: 'cpuChart', label: 'CPU + CPU Wait', color: 'rgba(0, 180, 0, 1)', baseValue: 40, variance: 15 },
-                { id: 'schedulerChart', label: 'Scheduler', color: 'rgba(173, 216, 230, 1)', baseValue: 15, variance: 10 },
-                { id: 'userioChart', label: 'User I/O', color: 'rgba(0, 191, 255, 1)', baseValue: 28, variance: 18 },
-                { id: 'systemioChart', label: 'System I/O', color: 'rgba(30, 144, 255, 1)', baseValue: 18, variance: 12 },
-                { id: 'concurrencyChart', label: 'Concurrency', color: 'rgba(139, 0, 139, 1)', baseValue: 12, variance: 8 },
-                { id: 'applicationChart', label: 'Application', color: 'rgba(178, 34, 34, 1)', baseValue: 20, variance: 10 },
-                { id: 'commitChart', label: 'Commit', color: 'rgba(255, 140, 0, 1)', baseValue: 35, variance: 20 },
-                { id: 'configurationChart', label: 'Configuration', color: 'rgba(128, 128, 128, 1)', baseValue: 8, variance: 5 },
-                { id: 'administrativeChart', label: 'Administrative', color: 'rgba(85, 107, 47, 1)', baseValue: 10, variance: 7 },
-                { id: 'networkChart', label: 'Network', color: 'rgba(70, 130, 180, 1)', baseValue: 25, variance: 15 },
-                { id: 'queueingChart', label: 'Queueing', color: 'rgba(218, 165, 32, 1)', baseValue: 15, variance: 10 },
-                { id: 'clusterChart', label: 'Cluster', color: 'rgba(169, 169, 169, 1)', baseValue: 20, variance: 12 },
-                { id: 'otherChart', label: 'Other', color: 'rgba(255, 182, 193, 1)', baseValue: 10, variance: 8 }
-            ];
-            
-            charts.forEach(chart => {
-                const ctx = document.getElementById(chart.id);
-                if (ctx) {
-                    const data = generateActivityData(chart.baseValue, chart.variance, timeLabels.length);
-                    new Chart(ctx, createChartConfig(chart.label, data, chart.color));
-                }
-            });
-            
-            // Add tab change event listeners to ensure charts render properly when tabs become visible
-            document.querySelectorAll('button[data-bs-toggle="tab"]').forEach(tab => {
-                tab.addEventListener('shown.bs.tab', function (event) {
-                    const targetId = event.target.getAttribute('data-bs-target').substring(1);
-                    const chartCanvas = document.getElementById(targetId + 'Chart');
-                    if (chartCanvas && chartCanvas.__chart) {
-                        chartCanvas.__chart.update();
-                    }
-                });
-            });
-        }
-        
-        // SQL Modal functionality
-        const sqlModal = document.getElementById('sqlModal');
-        if (sqlModal) {
-            // Sample SQL queries for demonstration
-            const sampleQueries = {
-                'SELECT_1': `SELECT u.user_id, u.username, u.email, u.status, u.created_at
-FROM users u
-WHERE u.status = 'active'
-  AND u.created_at > '2023-01-01'
-ORDER BY u.created_at DESC
-LIMIT 20;`,
-                'SELECT_2': `SELECT 
-    p.product_id,
-    p.product_name,
-    p.description,
-    c.category_name,
-    p.price,
-    p.stock_quantity,
-    p.created_at,
-    p.last_updated
-FROM 
-    products p
-JOIN 
-    categories c ON p.category_id = c.category_id
-WHERE 
-    p.price > 50.00
-    AND p.stock_quantity > 0
-    AND c.category_name IN ('Electronics', 'Home Appliances')
-ORDER BY 
-    p.price DESC,
-    p.product_name ASC
-LIMIT 100;`,
-                'UPDATE_1': `UPDATE products
-SET 
-    stock_quantity = stock_quantity - 1,
-    last_updated = CURRENT_TIMESTAMP,
-    status = CASE 
-                WHEN stock_quantity <= 1 THEN 'out_of_stock'
-                WHEN stock_quantity <= 10 THEN 'low_stock'
-                ELSE 'in_stock'
-             END
-WHERE 
-    product_id = 456
-    AND stock_quantity > 0;`,
-                'CREATE_TABLE': `CREATE TABLE customer_orders (
-    order_id SERIAL PRIMARY KEY,
-    customer_id INTEGER NOT NULL REFERENCES customers(customer_id),
-    order_date TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    total_amount DECIMAL(10, 2) NOT NULL,
-    status VARCHAR(20) NOT NULL DEFAULT 'pending',
-    shipping_address TEXT NOT NULL,
-    payment_method VARCHAR(50) NOT NULL,
-    notes TEXT,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP
-);
+        });
+    }
 
-CREATE INDEX idx_customer_orders_customer_id ON customer_orders(customer_id);
-CREATE INDEX idx_customer_orders_order_date ON customer_orders(order_date);
-CREATE INDEX idx_customer_orders_status ON customer_orders(status);`,
-                'CREATE_EXTENSION': `CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
-CREATE EXTENSION IF NOT EXISTS pg_buffercache;
-CREATE EXTENSION IF NOT EXISTS pgstattuple;`,
-                'SELECT_schema': `SELECT 
-    n.nspname AS schema_name,
-    c.relname AS table_name,
-    c.reltuples AS row_estimate,
-    pg_size_pretty(pg_total_relation_size(c.oid)) AS total_size,
-    pg_size_pretty(pg_relation_size(c.oid)) AS table_size,
-    pg_size_pretty(pg_indexes_size(c.oid)) AS indexes_size,
-    pg_size_pretty(pg_total_relation_size(c.oid) - pg_relation_size(c.oid)) AS external_size
-FROM 
-    pg_class c
-LEFT JOIN 
-    pg_namespace n ON n.oid = c.relnamespace
-WHERE 
-    c.relkind = 'r'
-    AND n.nspname NOT IN ('pg_catalog', 'information_schema')
-ORDER BY 
-    pg_total_relation_size(c.oid) DESC
-LIMIT 20;`
-            };
-            
-            // Function to format SQL query with syntax highlighting
-            function formatSQLQuery(sql) {
-                if (!sql) return 'No SQL text available';
-                
-                // Simple SQL formatting - in a real app, you might use a proper SQL formatter library
-                return sql.trim();
-            }
-            
-            // Handle modal show event
-            sqlModal.addEventListener('show.bs.modal', function (event) {
-                try {
-                    // Button that triggered the modal
-                    const button = event.relatedTarget;
-                    
-                    // Extract info from data-* attributes
-                    const sqlId = button.getAttribute('data-sql-id');
-                    let sqlText = button.getAttribute('data-sql-text');
-                    
-                    console.log('SQL Modal opened with SQL ID:', sqlId);
-                    console.log('Original SQL Text:', sqlText);
-                    
-                    // If the SQL text is very short or 'unknown', use a sample query for demonstration
-                    if (!sqlText || sqlText.length < 20 || sqlText === 'No SQL text available' || sqlText === 'unknown') {
-                        if (sqlId.startsWith('SELECT')) {
-                            sqlText = sampleQueries['SELECT_1'];
-                        } else if (sqlId.startsWith('UPDATE')) {
-                            sqlText = sampleQueries['UPDATE_1'];
-                        } else if (sqlId.startsWith('CREATE')) {
-                            sqlText = sampleQueries['CREATE_TABLE'];
-                        } else {
-                            // Choose a random sample query
-                            const keys = Object.keys(sampleQueries);
-                            sqlText = sampleQueries[keys[Math.floor(Math.random() * keys.length)]];
-                        }
-                    }
-                    
-                    // Update the modal's content
-                    const modalSqlId = sqlModal.querySelector('#modal-sql-id');
-                    const modalSqlText = sqlModal.querySelector('#modal-sql-text');
-                    
-                    if (modalSqlId) modalSqlId.textContent = sqlId;
-                    if (modalSqlText) modalSqlText.textContent = formatSQLQuery(sqlText);
-                    
-                    console.log('Formatted SQL Text:', formatSQLQuery(sqlText));
-                    
-                    // Add a click event to the SQL text container to allow easy selection
-                    const modalSqlTextContainer = sqlModal.querySelector('#modal-sql-text-container');
-                    if (modalSqlTextContainer) {
-                        modalSqlTextContainer.onclick = function() {
-                            const selection = window.getSelection();
-                            const range = document.createRange();
-                            range.selectNodeContents(modalSqlText);
-                            selection.removeAllRanges();
-                            selection.addRange(range);
-                        };
-                    }
-                } catch (error) {
-                    console.error('Error in SQL modal:', error);
-                    // Fallback to a default query if there's an error
-                    const modalSqlId = sqlModal.querySelector('#modal-sql-id');
-                    const modalSqlText = sqlModal.querySelector('#modal-sql-text');
-                    
-                    if (modalSqlId) modalSqlId.textContent = 'Example SQL';
-                    if (modalSqlText) modalSqlText.textContent = sampleQueries['SELECT_2'];
-                }
-            });
-            
-            // Fix for SQL ID links in the table
-            document.querySelectorAll('.sql-id-link').forEach(link => {
-                link.addEventListener('click', function(e) {
-                    // Ensure the data attributes are properly set
-                    if (!this.getAttribute('data-sql-id') || !this.getAttribute('data-sql-text')) {
-                        const sqlId = this.textContent.trim();
-                        this.setAttribute('data-sql-id', sqlId);
-                        
-                        // Set a sample query based on the SQL ID type
-                        if (sqlId.startsWith('SELECT')) {
-                            this.setAttribute('data-sql-text', sampleQueries['SELECT_2']);
-                        } else if (sqlId.startsWith('UPDATE')) {
-                            this.setAttribute('data-sql-text', sampleQueries['UPDATE_1']);
-                        } else if (sqlId.startsWith('CREATE')) {
-                            this.setAttribute('data-sql-text', sampleQueries['CREATE_TABLE']);
-                        } else {
-                            const keys = Object.keys(sampleQueries);
-                            this.setAttribute('data-sql-text', sampleQueries[keys[Math.floor(Math.random() * keys.length)]]);
-                        }
-                    }
-                });
-            });
-        }
+    // Initialize charts immediately when the page loads
+    document.addEventListener('DOMContentLoaded', function() {
+        console.log('DOM loaded, initializing charts...');
+        window.initializeCharts();
     });
+
+    // Also try to initialize immediately in case DOMContentLoaded already fired
+    if (document.readyState === 'complete' || document.readyState === 'interactive') {
+        console.log('DOM already loaded, initializing charts immediately...');
+        window.initializeCharts();
+    }
 </script>
-{% endif %}
+    {% endif %}
 {% endblock %} 
